@@ -1,0 +1,76 @@
+services:
+  orchestrator:
+    build: .
+    container_name: langchain_orchestrator
+    restart: unless-stopped
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=America/Sao_Paulo
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /home/jean/.ssh:/root/.ssh:ro
+      - ./logs:/app/logs
+      - ./documents:/app/documents
+      - ./data:/app/data
+      - ./generated_images:/app/generated_images
+      - ./main.py:/app/main.py
+      - ./rag_service.py:/app/rag_service.py
+      - ./cache_service.py:/app/cache_service.py
+      - ./config.py:/app/config.py
+      - ./prompts.py:/app/prompts.py
+      - ./classifier.py:/app/classifier.py
+      - ./coding_service.py:/app/coding_service.py
+      - ./chat_service.py:/app/chat_service.py
+      - ./factual_service.py:/app/factual_service.py
+      - ./image_service.py:/app/image_service.py
+      - ./reasoning_service.py:/app/reasoning_service.py
+      - ./agent_service.py:/app/agent_service.py
+      - ./social_service.py:/app/social_service.py
+      - ./social_image_composer.py:/app/social_image_composer.py
+      - ./social_mode_design.py:/app/social_mode_design.py
+      - ./social_mode_smart.py:/app/social_mode_smart.py
+      - ./scraper_service.py:/app/scraper_service.py
+      - ./cron_ingest_rss.py:/app/cron_ingest_rss.py
+      - ./rss_feeds.json:/app/rss_feeds.json
+      - ./audio_service.py:/app/audio_service.py
+      - ./feedback_service.py:/app/feedback_service.py
+      - ./data_export_service.py:/app/data_export_service.py
+      - ./finance_api_service.py:/app/finance_api_service.py
+      - ./canonical_api_service.py:/app/canonical_api_service.py
+      - ./episodic_memory_service.py:/app/episodic_memory_service.py
+      - ./dashboard_service.py:/app/dashboard_service.py
+      - ./admin_config_service.py:/app/admin_config_service.py
+      - ./video_service.py:/app/video_service.py
+      - ./dashboard.html:/app/dashboard.html
+      - /home/jean/implementation_docs/langchain_orchestrator_architecture_v2.md:/app/docs_view/langchain_orchestrator_architecture_v2.md:ro
+      - ./README.md:/app/docs_view/README.md:ro
+    depends_on:
+      - qdrant
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: langchain_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__ENABLE_STATIC_CONTENT=true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

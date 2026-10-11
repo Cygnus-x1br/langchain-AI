@@ -1,0 +1,2232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LangChain Orchestrator - Dashboard de Controle & Métricas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg-base: #0b0f19;
+      --bg-surface: #111827;
+      --bg-card: #182234;
+      --bg-hover: #1f2c42;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(99, 102, 241, 0.3);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Top Navigation Header */
+    header {
+      background: rgba(17, 24, 39, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0 1.5rem;
+      min-height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 18px rgba(99, 102, 241, 0.4);
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: white;
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+    }
+    .brand-badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      white-space: nowrap;
+    }
+
+    /* Navigation Tabs */
+    .nav-tabs {
+      display: flex;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 4px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      overflow-x: auto;
+      max-width: 100%;
+      -webkit-overflow-scrolling: touch;
+    }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: var(--bg-hover);
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+    }
+
+    /* Actions Header */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .date-select {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 0.825rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .btn-refresh {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 7px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.825rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .btn-refresh:hover {
+      border-color: var(--primary);
+      background: var(--bg-hover);
+    }
+
+    /* Main Container */
+    main {
+      padding: 1.5rem;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
+      flex: 1;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.25s ease forwards;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .kpi-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-highlight);
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      opacity: 0.8;
+    }
+    .kpi-title {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: white;
+    }
+    .kpi-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Charts Grid */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+      width: 100%;
+    }
+    .chart-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      min-width: 0; /* Impede overflow horizontal do Canvas no CSS Grid */
+    }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .chart-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .chart-container {
+      position: relative;
+      height: 290px;
+      width: 100%;
+    }
+
+    /* Table View for Logs */
+    .table-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+    .table-toolbar {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.15);
+    }
+    .search-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 0.85rem;
+      width: 100%;
+      max-width: 340px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-box:focus {
+      border-color: var(--primary);
+    }
+    .table-responsive {
+      max-height: 650px;
+      overflow-x: auto;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.825rem;
+      min-width: 800px;
+    }
+    th {
+      background: var(--bg-card);
+      padding: 10px 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .badge-route {
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+    .badge-success {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge-error {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .badge-cache {
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+    .code-cell {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.775rem;
+      color: #e2e8f0;
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .prompt-cell {
+      max-width: 320px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #cbd5e1;
+    }
+
+    /* Documentation Viewer */
+    .doc-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 1.25rem;
+    }
+    .doc-sidebar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1rem;
+      height: fit-content;
+    }
+    .doc-menu-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+    .doc-link {
+      display: block;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.825rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    .doc-link:hover {
+      color: var(--text-main);
+      background: var(--bg-card);
+    }
+    .doc-link.active {
+      background: var(--primary);
+      color: white;
+    }
+    .doc-content {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 2rem;
+      line-height: 1.7;
+      color: #cbd5e1;
+      overflow-x: auto;
+    }
+    .doc-content h1, .doc-content h2, .doc-content h3, .doc-content h4 {
+      color: white;
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.02em;
+    }
+    .doc-content h1 { font-size: 1.6rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+    .doc-content h2 { font-size: 1.3rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem; }
+    .doc-content h3 { font-size: 1.1rem; }
+    .doc-content p { margin-bottom: 1rem; }
+    .doc-content pre {
+      background: #060911;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      overflow-x: auto;
+      margin-bottom: 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.825rem;
+    }
+    .doc-content code {
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(255,255,255,0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.825rem;
+      color: #93c5fd;
+    }
+    .doc-content pre code {
+      background: transparent;
+      padding: 0;
+      color: #e2e8f0;
+    }
+    .doc-content table {
+      margin-bottom: 1.5rem;
+      min-width: 100%;
+    }
+    .doc-content blockquote {
+      border-left: 3px solid var(--primary);
+      padding-left: 1rem;
+      margin: 1rem 0;
+      color: var(--text-muted);
+    }
+    .doc-content ul, .doc-content ol {
+      margin-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    /* Modal for Log Details */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 800px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+    .modal-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-title { font-size: 1rem; font-weight: 600; }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    .modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-json {
+      background: #060911;
+      padding: 1rem;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* ---------------------------------------------------------
+       RESPONSIVIDADE MOBILE & TABLET (MEDIA QUERIES)
+       --------------------------------------------------------- */
+    @media (max-width: 1024px) {
+      .doc-layout {
+        grid-template-columns: 1fr;
+      }
+      .doc-sidebar {
+        margin-bottom: 1rem;
+      }
+    }
+
+    @media (max-width: 768px) {
+      header {
+        padding: 0.75rem 1rem;
+        height: auto;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .brand {
+        justify-content: space-between;
+      }
+      .nav-tabs {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .tab-btn {
+        flex: 1;
+        justify-content: center;
+        padding: 7px 10px;
+        font-size: 0.775rem;
+      }
+      .header-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .date-select {
+        flex: 1;
+      }
+      main {
+        padding: 1rem;
+      }
+      .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+      }
+      .kpi-card {
+        padding: 1rem;
+      }
+      .kpi-value {
+        font-size: 1.5rem;
+      }
+      .charts-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+      .chart-container {
+        height: 220px;
+      }
+      .table-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .search-box {
+        max-width: 100%;
+      }
+      .doc-content {
+        padding: 1.25rem;
+      }
+      .doc-content h1 { font-size: 1.35rem; }
+      .doc-content h2 { font-size: 1.15rem; }
+    }
+
+    /* ---------------------------------------------------------
+       ESTILOS DA ABA DE ADMINISTRAÇÃO & GUARDRAILS
+       --------------------------------------------------------- */
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .action-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 1rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .action-card:hover {
+      border-color: var(--border-highlight);
+      transform: translateY(-2px);
+    }
+    .action-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .action-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+    .action-title { font-weight: 600; font-size: 0.95rem; color: #fff; }
+    .action-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+    .btn-action {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.825rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .btn-action:hover {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+    }
+    .btn-action-danger:hover {
+      background: var(--danger) !important;
+      border-color: var(--danger) !important;
+      box-shadow: 0 2px 10px rgba(239, 68, 68, 0.4) !important;
+    }
+    .btn-action-warning:hover {
+      background: var(--warning) !important;
+      border-color: var(--warning) !important;
+      color: #000 !important;
+      box-shadow: 0 2px 10px rgba(245, 158, 11, 0.4) !important;
+    }
+
+    .config-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .config-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .config-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .prompt-select-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .prompt-chip {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.775rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .prompt-chip:hover {
+      color: #fff;
+      border-color: var(--border-highlight);
+    }
+    .prompt-chip.active {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: var(--primary);
+      color: #fff;
+      font-weight: 600;
+    }
+    .prompt-editor-box {
+      width: 100%;
+      height: 320px;
+      background: #060911;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      padding: 1rem;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .prompt-editor-box:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+    .guardrail-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+    }
+    .guardrail-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+    }
+    .guardrail-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+    .guardrail-input {
+      background: #060911;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+      width: 100%;
+    }
+    .guardrail-input:focus {
+      border-color: var(--accent);
+    }
+    .toast-msg {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(17, 24, 39, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      z-index: 1000;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+    .toast-msg.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    @media (max-width: 480px) {
+      .kpi-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="brand-logo">⚡</div>
+        <div class="brand-title">Orchestrator Hub</div>
+      </div>
+      <span class="brand-badge">Online v2.0</span>
+    </div>
+
+    <nav class="nav-tabs">
+      <button class="tab-btn active" onclick="switchTab('metrics')">
+        📊 Métricas
+      </button>
+      <button class="tab-btn" onclick="switchTab('logs')">
+        📑 Logs
+      </button>
+      <button class="tab-btn" onclick="switchTab('memory')">
+        🧠 Perfis & Memória Episódica
+      </button>
+      <button class="tab-btn" onclick="switchTab('docs')">
+        📖 Documentação
+      </button>
+      <button class="tab-btn" onclick="switchTab('models')">
+        🎯 Modelos & Prioridades
+      </button>
+      <button class="tab-btn" onclick="switchTab('admin')">
+        ⚙️ Administração & Guardrails
+      </button>
+    </nav>
+
+    <div class="header-actions">
+      <select id="dateSelector" class="date-select" onchange="onDateChange()">
+        <!-- Opções injetadas dinamicamente -->
+      </select>
+      <button class="btn-refresh" onclick="refreshCurrentTab()">
+        🔄 Atualizar
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- TAB 1: METRICS & CHARTS -->
+    <section id="tab-metrics" class="tab-content active">
+      <!-- KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-title">Total de Requisições</div>
+          <div id="kpi-total" class="kpi-value">0</div>
+          <div class="kpi-sub">Transações registradas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Taxa de Sucesso</div>
+          <div id="kpi-success" class="kpi-value">100%</div>
+          <div class="kpi-sub">Execução sem falhas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Latência Média</div>
+          <div id="kpi-latency" class="kpi-value">0.0s</div>
+          <div class="kpi-sub">Tempo ponta a ponta</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Acertos de Cache</div>
+          <div id="kpi-cache" class="kpi-value">0%</div>
+          <div id="kpi-cache-sub" class="kpi-sub">0 respostas instantâneas</div>
+        </div>
+      </div>
+
+      <!-- Charts Grid -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3 class="chart-title">Distribuição por Categoria Semântica</h3>
+          </div>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3 class="chart-title">Modelos e Destinos Executados</h3>
+          </div>
+          <div class="chart-container">
+            <canvas id="modelChart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card" style="grid-column: 1 / -1;">
+          <div class="chart-header">
+            <h3 class="chart-title">Volume de Requisições por Hora (Horário de Brasília)</h3>
+          </div>
+          <div class="chart-container">
+            <canvas id="hourlyChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: LOGS TABULADOS -->
+    <section id="tab-logs" class="tab-content">
+      <div class="table-container">
+        <div class="table-toolbar">
+          <input type="text" id="logSearchInput" class="search-box" placeholder="Buscar por prompt, usuário, rota ou modelo..." oninput="filterLogsTable()">
+          <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+            <span>Ordem: <strong style="color: var(--accent);">Decrescente (Recentes primeiro)</strong></span>
+            <span>•</span>
+            <span>Total: <strong id="logCountSpan" style="color: white;">0</strong></span>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Horário</th>
+                <th>Usuário / IP</th>
+                <th>Categoria</th>
+                <th>Método de Roteamento</th>
+                <th>Modelo de Destino</th>
+                <th>Duração</th>
+                <th>Status</th>
+                <th>Prompt do Usuário</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody">
+              <!-- Linhas geradas via JavaScript em ordem decrescente -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: PERFIS & MEMÓRIA EPISÓDICA -->
+    <section id="tab-memory" class="tab-content">
+      <div style="display: grid; grid-template-columns: 320px 1fr; gap: 1.25rem;">
+        <!-- Lista de Usuários e Perfis -->
+        <div class="card" style="padding: 1.25rem;">
+          <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+            <span>👥 Perfis de Usuário</span>
+            <span id="profilesCountBadge" class="badge badge-route">0</span>
+          </div>
+          <input type="text" id="userProfileSearch" class="search-box" style="width: 100%; margin-bottom: 0.75rem;" placeholder="Filtrar usuário/email..." oninput="filterUserProfiles()">
+          <div id="userProfilesList" style="max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+            <!-- Itens de usuários gerados dinamicamente -->
+          </div>
+        </div>
+
+        <!-- Detalhes do Perfil Selecionado & Memórias Episódicas -->
+        <div class="card" style="padding: 1.5rem;">
+          <div id="selectedUserProfileDetails">
+            <div style="text-align: center; color: var(--text-muted); padding: 3rem;">
+              Selecione um usuário à esquerda para inspecionar seu perfil analítico, arquétipo comportamental e memórias episódicas permanentes.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: DOCUMENTAÇÃO -->
+    <section id="tab-docs" class="tab-content">
+      <div class="doc-layout">
+        <aside class="doc-sidebar">
+          <div class="doc-menu-title">Arquivos Disponíveis</div>
+          <a class="doc-link active" onclick="loadDoc('architecture', this)">
+            🏛️ Arquitetura & Engenharia v2
+          </a>
+          <a class="doc-link" onclick="loadDoc('readme', this)">
+            📘 README & Guia Geral
+          </a>
+        </aside>
+
+        <article id="docContainer" class="doc-content">
+          <p>Carregando documentação...</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- TAB 5: MODELOS & PRIORIDADES -->
+    <section id="tab-models" class="tab-content">
+      <div class="config-section">
+        <div class="config-header">
+          <div>
+            <div class="config-title">
+              <span>🎯 Configuração de Modelos por Funcionalidade</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+              Defina a ordem de prioridade dos modelos padrão para cada funcionalidade do sistema.
+              O primeiro modelo é o principal; os seguintes atuarão como fallback automático.
+              Você só pode utilizar os modelos homologados que já vêm configurados de fábrica.
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+             <button class="btn-refresh" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);" onclick="resetModelsConfig()">
+               ⏮️ Restaurar Padrões Originais
+             </button>
+             <button class="btn-refresh" style="background: var(--primary); color: white; border-color: var(--primary);" onclick="saveModelsConfig()">
+               💾 Salvar Alterações
+             </button>
+          </div>
+        </div>
+        
+        <div id="modelsCategoriesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+           <p style="color: var(--text-muted);">Carregando modelos...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: ADMINISTRAÇÃO & GUARDRAILS -->
+    <section id="tab-admin" class="tab-content">
+      <!-- Barra de Autenticação / Senha Administrativa -->
+      <div id="adminAuthBanner" style="background: rgba(17, 24, 39, 0.9); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div id="authStatusIcon" style="width: 36px; height: 36px; border-radius: 8px; background: rgba(245, 158, 11, 0.15); color: var(--warning); display: flex; align-items: center; justify-content: center; font-size: 1.15rem;">
+            🔒
+          </div>
+          <div>
+            <div id="authStatusTitle" style="font-size: 0.95rem; font-weight: 600; color: #fff;">
+              Modo Protegido por Senha
+            </div>
+            <div id="authStatusSub" style="font-size: 0.775rem; color: var(--text-muted);">
+              Insira a senha mestra para desbloquear ações operacionais e edição de prompts/guardrails.
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input type="password" id="adminPasswordInput" class="guardrail-input" style="width: 180px; padding: 7px 12px;" placeholder="Senha mestre..." onkeyup="if(event.key==='Enter') unlockAdminMode()">
+          <button id="btnAuthAction" class="btn-refresh" style="background: var(--primary); color: white; border-color: var(--primary);" onclick="unlockAdminMode()">
+            🔓 Desbloquear
+          </button>
+        </div>
+      </div>
+
+      <!-- Ações Rápidas do Sistema -->
+      <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+        ⚡ Ações Operacionais & Manutenção
+      </h3>
+      <div class="admin-grid">
+        <!-- Limpar Cache -->
+        <div class="action-card">
+          <div>
+            <div class="action-card-header">
+              <div class="action-icon" style="background: rgba(239, 68, 68, 0.15); color: var(--danger);">🗑️</div>
+              <div>
+                <div class="action-title">Limpeza Geral de Cache</div>
+                <div style="font-size: 0.725rem; color: #f87171;">SQLite Exato + Qdrant Semântico</div>
+              </div>
+            </div>
+            <p class="action-desc" style="margin-top: 10px;">
+              Descarta respostas salvas no cache de rotas. Ideal após alterar prompts ou fontes para invalidar respostas cacheadas antigas.
+            </p>
+          </div>
+          <button class="btn-action btn-action-danger" onclick="triggerAdminAction('cache/clear', 'Deseja realmente limpar todo o cache do sistema?')">
+            <span>🗑️ Limpar Todos os Caches</span>
+          </button>
+        </div>
+
+        <!-- Reindexar RAG -->
+        <div class="action-card">
+          <div>
+            <div class="action-card-header">
+              <div class="action-icon" style="background: rgba(99, 102, 241, 0.15); color: var(--primary);">📚</div>
+              <div>
+                <div class="action-title">Reorganizar / Reindexar RAG</div>
+                <div style="font-size: 0.725rem; color: #a5b4fc;">Qdrant Knowledge Base</div>
+              </div>
+            </div>
+            <p class="action-desc" style="margin-top: 10px;">
+              Revarre a pasta corporativa <code>/app/documents</code> (.txt, .md, .pdf), recalcula embeddings nomic-embed e atualiza a base vetorial.
+            </p>
+          </div>
+          <button class="btn-action" onclick="triggerAdminAction('rag/reindex', 'Deseja reindexar os documentos da base RAG agora?')">
+            <span>🔄 Reindexar Documentos</span>
+          </button>
+        </div>
+
+        <!-- Prune Memória Temporária -->
+        <div class="action-card">
+          <div>
+            <div class="action-card-header">
+              <div class="action-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--warning);">⏳</div>
+              <div>
+                <div class="action-title">Limpeza de Memória Expirada</div>
+                <div style="font-size: 0.725rem; color: #fcd34d;">TTL 30 Dias (Qdrant)</div>
+              </div>
+            </div>
+            <p class="action-desc" style="margin-top: 10px;">
+              Executa a varredura e exclusão imediata de memórias temporárias de documentos/livros com prazo de validade expirado.
+            </p>
+          </div>
+          <button class="btn-action btn-action-warning" onclick="triggerAdminAction('rag/prune', 'Deseja disparar a limpeza de memórias temporárias expiradas?')">
+            <span>🧹 Limpar Memórias Expiradas</span>
+          </button>
+        </div>
+
+        <!-- Sincronizar Feedbacks -->
+        <div class="action-card">
+          <div>
+            <div class="action-card-header">
+              <div class="action-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--success);">👍</div>
+              <div>
+                <div class="action-title">Sincronização de Feedbacks</div>
+                <div style="font-size: 0.725rem; color: #6ee7b7;">LibreChat MongoDB + Qdrant</div>
+              </div>
+            </div>
+            <p class="action-desc" style="margin-top: 10px;">
+              Sincroniza avaliações positivas e negativas dos usuários, abastecendo a memória de correção e alimentando o guardrail reflexivo.
+            </p>
+          </div>
+          <button class="btn-action" onclick="triggerAdminAction('feedback/sync', 'Deseja sincronizar os feedbacks com o MongoDB agora?')">
+            <span>📥 Sincronizar Feedbacks</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Editor Dinâmico de Prompts -->
+      <div class="config-section">
+        <div class="config-header">
+          <div>
+            <div class="config-title">
+              <span>✍️ Ajuste dos Prompts Padrão do Sistema</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+              Personalize os templates de prompt dos modelos. Em caso de omissão ou erro, o sistema reverte com segurança para o fallback de fábrica.
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-refresh" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);" onclick="resetAllConfig()">
+              ⏮️ Restaurar Padrões Originais
+            </button>
+            <button class="btn-refresh" style="background: var(--primary); color: white; border-color: var(--primary);" onclick="saveAdminConfig()">
+              💾 Salvar Alterações
+            </button>
+          </div>
+        </div>
+
+        <!-- Barra de Seleção de Prompts -->
+        <div id="promptsChipsBar" class="prompt-select-bar">
+          <!-- Chips gerados dinamicamente via JS -->
+        </div>
+
+        <!-- Painel de Edição do Prompt Selecionado -->
+        <div style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <span id="activePromptTitle" style="font-weight: 600; color: #fff; font-size: 0.95rem;">Carregando...</span>
+            <span id="activePromptCategory" class="badge badge-route" style="margin-left: 8px;">--</span>
+          </div>
+          <div id="activePromptVariables" style="font-size: 0.775rem; color: var(--accent); font-family: 'JetBrains Mono', monospace;">
+            <!-- Variáveis necessárias -->
+          </div>
+        </div>
+        <p id="activePromptDescription" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.4;"></p>
+        <textarea id="promptEditorArea" class="prompt-editor-box" spellcheck="false"></textarea>
+      </div>
+
+      <!-- Gestão e Limiares de Guardrails Numéricos -->
+      <div class="config-section">
+        <div class="config-header">
+          <div>
+            <div class="config-title">
+              <span>🛡️ Guardrails e Limiares Operacionais de Confiança</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+              Ajuste limiares de tolerância, similaridade matemática e tempos limites (timeouts) com valores restritos a faixas seguras.
+            </div>
+          </div>
+          <button class="btn-refresh" style="background: var(--primary); color: white; border-color: var(--primary);" onclick="saveAdminConfig()">
+            💾 Salvar Guardrails
+          </button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+          <!-- RAG High Confidence Threshold -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>RAG Alta Confiança (Threshold)</span>
+              <span id="val_rag_confidence_threshold_high" style="color: var(--success); font-family: 'JetBrains Mono';">0.65</span>
+            </div>
+            <p class="guardrail-sub">Similaridade semântica mínima (0.0 a 1.0) para sintetizar resposta como alta precisão.</p>
+            <input type="number" step="0.01" min="0.10" max="0.99" id="input_rag_confidence_threshold_high" class="guardrail-input" oninput="updateGuardrailPreview('rag_confidence_threshold_high')">
+          </div>
+
+          <!-- RAG Medium Confidence Threshold -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>RAG Confiança Moderada (Threshold)</span>
+              <span id="val_rag_confidence_threshold_medium" style="color: var(--warning); font-family: 'JetBrains Mono';">0.50</span>
+            </div>
+            <p class="guardrail-sub">Similaridade para respostas com aviso de checagem. Abaixo disso é considerada baixa.</p>
+            <input type="number" step="0.01" min="0.10" max="0.95" id="input_rag_confidence_threshold_medium" class="guardrail-input" oninput="updateGuardrailPreview('rag_confidence_threshold_medium')">
+          </div>
+
+          <!-- Fallback Web Search Threshold -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Limiar de Fallback para Web Search</span>
+              <span id="val_rag_fallback_web_threshold" style="color: var(--accent); font-family: 'JetBrains Mono';">0.64</span>
+            </div>
+            <p class="guardrail-sub">Se o top score da base for menor que este limiar e não houver documento citado, aciona busca web.</p>
+            <input type="number" step="0.01" min="0.10" max="0.95" id="input_rag_fallback_web_threshold" class="guardrail-input" oninput="updateGuardrailPreview('rag_fallback_web_threshold')">
+          </div>
+
+          <!-- Fact Auditor Min Sources Length -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Auditor de Fatos: Mínimo de Caracteres</span>
+              <span id="val_fact_auditor_min_sources_length" style="color: #cbd5e1; font-family: 'JetBrains Mono';">30</span>
+            </div>
+            <p class="guardrail-sub">Tamanho mínimo das fontes para disparar a reflexão anti-alucinação (evita overhead).</p>
+            <input type="number" step="5" min="10" max="500" id="input_fact_auditor_min_sources_length" class="guardrail-input" oninput="updateGuardrailPreview('fact_auditor_min_sources_length')">
+          </div>
+
+          <!-- Fact Auditor Timeout -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Auditor de Fatos: Timeout (Segundos)</span>
+              <span id="val_fact_auditor_timeout_seconds" style="color: #cbd5e1; font-family: 'JetBrains Mono';">8.0s</span>
+            </div>
+            <p class="guardrail-sub">Tempo máximo de tolerância para o modelo auditor responder antes de manter o texto preliminar.</p>
+            <input type="number" step="0.5" min="1.0" max="30.0" id="input_fact_auditor_timeout_seconds" class="guardrail-input" oninput="updateGuardrailPreview('fact_auditor_timeout_seconds')">
+          </div>
+
+          <!-- User Memory Default TTL -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Memória Temporária do Usuário: TTL (Dias)</span>
+              <span id="val_user_memory_default_ttl_days" style="color: #cbd5e1; font-family: 'JetBrains Mono';">30 dias</span>
+            </div>
+            <p class="guardrail-sub">Prazo padrão de retenção de documentos e arquivos enviados pelos usuários no Qdrant.</p>
+            <input type="number" step="1" min="1" max="365" id="input_user_memory_default_ttl_days" class="guardrail-input" oninput="updateGuardrailPreview('user_memory_default_ttl_days')">
+          </div>
+
+          <!-- Deep Scrape Timeout -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Timeout de Scraping Headless (Segundos)</span>
+              <span id="val_deep_scrape_timeout_seconds" style="color: #cbd5e1; font-family: 'JetBrains Mono';">6.0s</span>
+            </div>
+            <p class="guardrail-sub">Limite de tempo para extração via Crawl4AI antes de alternar para extrator leve (httpx).</p>
+            <input type="number" step="0.5" min="1.0" max="30.0" id="input_deep_scrape_timeout_seconds" class="guardrail-input" oninput="updateGuardrailPreview('deep_scrape_timeout_seconds')">
+          </div>
+
+          <!-- Search Engine Max Results -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Resultados Máximos de Busca Web</span>
+              <span id="val_search_engine_max_results" style="color: #cbd5e1; font-family: 'JetBrains Mono';">4</span>
+            </div>
+            <p class="guardrail-sub">Quantidade de links e trechos recuperados do SearXNG para compor o contexto factual.</p>
+            <input type="number" step="1" min="1" max="10" id="input_search_engine_max_results" class="guardrail-input" oninput="updateGuardrailPreview('search_engine_max_results')">
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="adminToast" class="toast-msg">
+    <span id="toastIcon">✨</span>
+    <span id="toastText">Operação realizada com sucesso!</span>
+  </div>
+
+  <!-- Log Detail Modal -->
+  <div id="logDetailModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Detalhes da Transação</h3>
+        <button class="modal-close" onclick="closeLogModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <pre id="modalJsonContent" class="modal-json"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let categoryChartInstance = null;
+    let modelChartInstance = null;
+    let hourlyChartInstance = null;
+    let allLogs = [];
+
+    // Alternância de Abas
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      event.currentTarget.classList.add('active');
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+
+      if (tabId === 'memory') {
+        loadUserProfilesTab();
+      } else if (tabId === 'docs' && !document.getElementById('docContainer').getAttribute('data-loaded')) {
+        loadDoc('architecture');
+      } else if (tabId === 'models') {
+        loadModelsConfig();
+      } else if (tabId === 'admin') {
+        loadAdminConfig();
+      }
+    }
+
+    // Gerenciador da Aba de Memória Episódica & Perfis
+    let allUserProfiles = {};
+    async function loadUserProfilesTab() {
+      try {
+        const resp = await fetch('/v1/user/profile');
+        const data = await resp.json();
+        allUserProfiles = data.profiles || {};
+        document.getElementById('profilesCountBadge').innerText = Object.keys(allUserProfiles).length;
+        renderUserProfilesList(allUserProfiles);
+      } catch (err) {
+        console.error("Erro ao carregar perfis de usuário:", err);
+      }
+    }
+
+    function renderUserProfilesList(profiles) {
+      const listEl = document.getElementById('userProfilesList');
+      listEl.innerHTML = '';
+      const entries = Object.entries(profiles);
+      if (entries.length === 0) {
+        listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem;">Nenhum perfil registrado ainda.</div>';
+        return;
+      }
+
+      entries.forEach(([uid, p], idx) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding: 10px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s;';
+        item.onmouseover = () => item.style.borderColor = 'var(--accent)';
+        item.onmouseout = () => item.style.borderColor = 'var(--border-color)';
+        item.onclick = () => selectUserProfile(uid);
+
+        const emailDisplay = p.email || uid.substring(0, 16) + '...';
+        const arch = p.detected_archetype || 'Geral';
+        const count = p.total_interactions || 0;
+
+        item.innerHTML = `
+          <div style="font-weight: 600; font-size: 0.825rem; color: white;">${emailDisplay}</div>
+          <div style="font-size: 0.725rem; color: var(--accent); margin-top: 2px;">${arch}</div>
+          <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; display: flex; justify-content: space-between;">
+            <span>${count} requisições</span>
+            <span>${p.last_seen ? p.last_seen.split('T')[0] : ''}</span>
+          </div>
+        `;
+        listEl.appendChild(item);
+
+        if (idx === 0 && !document.getElementById('selectedUserProfileDetails').getAttribute('data-selected-user')) {
+          selectUserProfile(uid);
+        }
+      });
+    }
+
+    function filterUserProfiles() {
+      const q = document.getElementById('userProfileSearch').value.toLowerCase();
+      const filtered = {};
+      Object.entries(allUserProfiles).forEach(([uid, p]) => {
+        if (uid.toLowerCase().includes(q) || (p.email && p.email.toLowerCase().includes(q)) || (p.detected_archetype && p.detected_archetype.toLowerCase().includes(q))) {
+          filtered[uid] = p;
+        }
+      });
+      renderUserProfilesList(filtered);
+    }
+
+    async function selectUserProfile(uid) {
+      const p = allUserProfiles[uid];
+      if (!p) return;
+      const detailsContainer = document.getElementById('selectedUserProfileDetails');
+      detailsContainer.setAttribute('data-selected-user', uid);
+
+      // Busca memórias episódicas gravadas para este usuário
+      let memories = [];
+      try {
+        const mResp = await fetch(`/v1/user/memories?user_id=${uid}`);
+        const mData = await mResp.json();
+        memories = mData.memories || [];
+      } catch (mErr) {
+        console.error("Erro ao buscar memórias episódicas:", mErr);
+      }
+
+      const frequentTopics = p.preferences?.frequent_topics || [];
+      const cats = p.categories_count || {};
+
+      let catsHtml = '';
+      Object.entries(cats).forEach(([c, cnt]) => {
+        catsHtml += `<span class="badge badge-route" style="margin-right: 6px; margin-bottom: 6px; font-size: 0.725rem;">${c}: ${cnt}</span>`;
+      });
+
+      let topicsHtml = frequentTopics.map(t => `<span class="badge badge-cache" style="margin-right: 6px; font-size: 0.725rem;">#${t}</span>`).join(' ') || '<span style="color: var(--text-muted)">Nenhum ainda</span>';
+
+      let memHtml = '';
+      if (memories.length > 0) {
+        memories.forEach(m => {
+          memHtml += `
+            <div style="background: rgba(255,255,255,0.02); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 4px; margin-bottom: 8px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.725rem; color: var(--text-muted); margin-bottom: 4px;">
+                <span style="font-weight: 600; color: #a5b4fc;">[${m.kind.toUpperCase()}] ${m.source}</span>
+                <span>Score: ${m.score}</span>
+              </div>
+              <div style="font-size: 0.825rem; color: #e2e8f0; line-height: 1.4;">${escapeHtml(m.content)}</div>
+            </div>
+          `;
+        });
+      } else {
+        memHtml = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 1rem 0;">Nenhuma memória episódica persistente extraída ainda para este perfil.</div>';
+      }
+
+      detailsContainer.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1.25rem;">
+          <div>
+            <h2 style="font-size: 1.25rem; font-weight: 700; color: white; margin-bottom: 4px;">${p.email || uid}</h2>
+            <div style="font-size: 0.8rem; color: var(--accent); font-weight: 600;">Arquétipo: ${p.detected_archetype || 'Geral'}</div>
+          </div>
+          <div style="text-align: right; font-size: 0.75rem; color: var(--text-muted);">
+            <div>Total de Interações: <strong style="color: white;">${p.total_interactions}</strong></div>
+            <div>Último Acesso: ${p.last_seen ? p.last_seen.replace('T', ' ').substring(0, 19) : '--'}</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: var(--bg-surface); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Distribuição de Categorias</div>
+            <div style="display: flex; flex-wrap: wrap;">${catsHtml || '<span style="color: var(--text-muted)">Sem dados</span>'}</div>
+          </div>
+
+          <div style="background: var(--bg-surface); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Padrões Recorrentes & Tópicos Frequentes</div>
+            <div style="margin-bottom: 8px;">${topicsHtml}</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Estilo de Resposta Ideal: <strong style="color: #cbd5e1;">${p.preferences?.style || 'equilibrado'}</strong></div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: white; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 8px;">
+            <span>🧬 Base de Memória Episódica Permanente no Qdrant</span>
+            <span class="badge badge-cache">${memories.length} memórias</span>
+          </div>
+          <div style="max-height: 280px; overflow-y: auto;">
+            ${memHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    // Inicialização da Página
+    async function initDashboard() {
+      await loadAvailableDates();
+      await fetchMetricsAndLogs();
+    }
+
+    // Carrega datas de arquivos de log
+    async function loadAvailableDates() {
+      try {
+        const resp = await fetch('/v1/dashboard/dates');
+        const data = await resp.json();
+        const selector = document.getElementById('dateSelector');
+        selector.innerHTML = '';
+        if (data.dates && data.dates.length > 0) {
+          data.dates.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.innerText = `Data: ${d}`;
+            selector.appendChild(opt);
+          });
+        }
+      } catch (err) {
+        console.error("Erro ao carregar datas:", err);
+      }
+    }
+
+    function onDateChange() {
+      fetchMetricsAndLogs();
+    }
+
+    function refreshCurrentTab() {
+      fetchMetricsAndLogs();
+      const activeDoc = document.querySelector('.doc-link.active');
+      if (activeDoc) {
+        activeDoc.click();
+      }
+    }
+
+    // Carrega Métricas e Logs do dia selecionado
+    async function fetchMetricsAndLogs() {
+      const selectedDate = document.getElementById('dateSelector').value;
+      const url = selectedDate ? `/v1/dashboard/data?date=${selectedDate}` : `/v1/dashboard/data`;
+
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        // 1. Atualiza KPIs
+        document.getElementById('kpi-total').innerText = data.metrics.total_requests;
+        document.getElementById('kpi-success').innerText = `${data.metrics.success_rate}%`;
+        document.getElementById('kpi-latency').innerText = `${data.metrics.avg_latency}s`;
+        document.getElementById('kpi-cache').innerText = `${data.metrics.cache_hit_rate}%`;
+        document.getElementById('kpi-cache-sub').innerText = `${data.metrics.cache_hits} respostas instantâneas`;
+
+        // 2. Renderiza Gráficos
+        renderCategoryChart(data.metrics.categories);
+        renderModelChart(data.metrics.models);
+        renderHourlyChart(data.metrics.hourly_distribution);
+
+        // 3. Popula Tabela de Logs (Garante ordem decrescente)
+        allLogs = (data.logs || []).sort((a, b) => {
+          const tA = a.timestamp || '';
+          const tB = b.timestamp || '';
+          return tB.localeCompare(tA);
+        });
+        renderLogsTable(allLogs);
+      } catch (err) {
+        console.error("Erro ao obter dados do dashboard:", err);
+      }
+    }
+
+    // Gráficos Chart.js
+    function renderCategoryChart(categories) {
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      if (categoryChartInstance) categoryChartInstance.destroy();
+
+      const labels = Object.keys(categories);
+      const values = Object.values(categories);
+
+      categoryChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: [
+              '#6366f1', '#06b6d4', '#10b981', '#f59e0b',
+              '#8b5cf6', '#ec4899', '#3b82f6', '#14b8a6', '#f97316'
+            ],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { 
+              position: window.innerWidth < 768 ? 'bottom' : 'right', 
+              labels: { color: '#9ca3af', font: { family: 'Inter', size: 10 } } 
+            }
+          }
+        }
+      });
+    }
+
+    function renderModelChart(models) {
+      const ctx = document.getElementById('modelChart').getContext('2d');
+      if (modelChartInstance) modelChartInstance.destroy();
+
+      // Top 8 modelos
+      const sorted = Object.entries(models).sort((a,b) => b[1] - a[1]).slice(0, 8);
+      const labels = sorted.map(i => i[0].length > 20 ? i[0].substring(0, 20) + '...' : i[0]);
+      const values = sorted.map(i => i[1]);
+
+      modelChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Chamadas',
+            data: values,
+            backgroundColor: '#6366f1',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af', font: { family: 'Inter', size: 9 } }, grid: { display: false } },
+            y: { ticks: { color: '#9ca3af', font: { family: 'Inter' } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        }
+      });
+    }
+
+    function renderHourlyChart(hourly) {
+      const ctx = document.getElementById('hourlyChart').getContext('2d');
+      if (hourlyChartInstance) hourlyChartInstance.destroy();
+
+      const labels = Object.keys(hourly);
+      const values = Object.values(hourly);
+
+      hourlyChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Requisições / Hora',
+            data: values,
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointBackgroundColor: '#06b6d4'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af', font: { family: 'Inter', size: 10 } }, grid: { display: false } },
+            y: { ticks: { color: '#9ca3af', font: { family: 'Inter' } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        }
+      });
+    }
+
+    // Renderiza Tabela de Logs (Ordem decrescente já garantida)
+    function renderLogsTable(logs) {
+      const tbody = document.getElementById('logsTableBody');
+      tbody.innerHTML = '';
+      document.getElementById('logCountSpan').innerText = logs.length;
+
+      logs.forEach((log, index) => {
+        const tr = document.createElement('tr');
+        
+        const timeStr = log.timestamp ? log.timestamp.split('T')[1].substring(0, 8) : '--';
+        const isSuccess = log.status === 'success';
+        const statusBadge = isSuccess 
+          ? `<span class="badge badge-success">OK</span>` 
+          : `<span class="badge badge-error">ERRO</span>`;
+        
+        const cacheBadge = log.cache_hit 
+          ? `<span class="badge badge-cache">CACHE</span>` 
+          : '';
+
+        tr.innerHTML = `
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #94a3b8; white-space: nowrap;">${timeStr}</td>
+          <td>
+            <div style="font-weight: 500; font-size: 0.825rem;">${log.user_email || log.user_id || 'Anônimo'}</div>
+            <div style="font-size: 0.725rem; color: var(--text-muted);">${log.client_ip || '--'}</div>
+          </td>
+          <td><span class="badge badge-route">${log.category || 'UNKNOWN'}</span></td>
+          <td style="font-size: 0.775rem; color: #cbd5e1; white-space: nowrap;">${log.routing_method || '--'}</td>
+          <td class="code-cell" title="${log.target_model || ''}">${log.target_model || '--'} ${cacheBadge}</td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; white-space: nowrap;">${log.duration_seconds || 0}s</td>
+          <td>${statusBadge}</td>
+          <td class="prompt-cell" title="${escapeHtml(log.prompt || '')}">${escapeHtml(log.prompt || '--')}</td>
+          <td>
+            <button class="btn-refresh" style="padding: 4px 8px; font-size: 0.725rem;" onclick="viewLogDetail(${index})">
+              Ver JSON
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function filterLogsTable() {
+      const q = document.getElementById('logSearchInput').value.toLowerCase();
+      const filtered = allLogs.filter(l => {
+        return (l.prompt && l.prompt.toLowerCase().includes(q)) ||
+               (l.category && l.category.toLowerCase().includes(q)) ||
+               (l.target_model && l.target_model.toLowerCase().includes(q)) ||
+               (l.user_email && l.user_email.toLowerCase().includes(q)) ||
+               (l.routing_method && l.routing_method.toLowerCase().includes(q));
+      });
+      renderLogsTable(filtered);
+    }
+
+    // Modal de Detalhes
+    function viewLogDetail(index) {
+      const log = allLogs[index];
+      document.getElementById('modalJsonContent').innerText = JSON.stringify(log, null, 2);
+      document.getElementById('logDetailModal').classList.add('active');
+    }
+    function closeLogModal() {
+      document.getElementById('logDetailModal').classList.remove('active');
+    }
+    function closeModalOnOverlay(e) {
+      if (e.target.id === 'logDetailModal') closeLogModal();
+    }
+
+    // Carregador de Documentação Markdown
+    async function loadDoc(docType, el) {
+      if (el) {
+        document.querySelectorAll('.doc-link').forEach(l => l.classList.remove('active'));
+        el.classList.add('active');
+      }
+
+      const container = document.getElementById('docContainer');
+      container.innerHTML = '<p>Carregando documentação...</p>';
+      try {
+        const resp = await fetch(`/v1/dashboard/docs?name=${docType}`);
+        const data = await resp.json();
+        container.innerHTML = marked.parse(data.content);
+        container.setAttribute('data-loaded', 'true');
+      } catch (err) {
+        container.innerHTML = `<p style="color: var(--danger)">Erro ao carregar documento: ${err}</p>`;
+      }
+    }
+
+    // ---------------------------------------------------------
+    // LÓGICA DA ABA DE ADMINISTRAÇÃO & GUARDRAILS (COM SENHA)
+    // ---------------------------------------------------------
+    let currentAdminData = {
+      prompts: {},
+      guardrails: {},
+      metadata: {}
+    };
+    let activePromptKey = 'CLASSIFICATION_PROMPT';
+
+    function getStoredAdminPassword() {
+      return sessionStorage.getItem('orchestrator_admin_pwd') || '';
+    }
+
+    function setStoredAdminPassword(pwd) {
+      if (pwd) {
+        sessionStorage.setItem('orchestrator_admin_pwd', pwd);
+      } else {
+        sessionStorage.removeItem('orchestrator_admin_pwd');
+      }
+      updateAuthUI();
+    }
+
+    function updateAuthUI() {
+      const pwd = getStoredAdminPassword();
+      const banner = document.getElementById('adminAuthBanner');
+      const icon = document.getElementById('authStatusIcon');
+      const title = document.getElementById('authStatusTitle');
+      const sub = document.getElementById('authStatusSub');
+      const btn = document.getElementById('btnAuthAction');
+      const input = document.getElementById('adminPasswordInput');
+
+      if (!banner) return;
+
+      if (pwd) {
+        banner.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+        icon.style.background = 'rgba(16, 185, 129, 0.15)';
+        icon.style.color = 'var(--success)';
+        icon.innerText = '🔓';
+        title.innerText = 'Administração Desbloqueada';
+        title.style.color = '#34d399';
+        sub.innerText = 'Sessão administrativa ativa. Você pode executar ações e alterar configurações.';
+        btn.innerText = '🔒 Bloquear';
+        btn.style.background = 'rgba(239, 68, 68, 0.2)';
+        btn.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+        btn.style.color = '#fca5a5';
+        input.value = '';
+        input.placeholder = 'Autenticado';
+        input.disabled = true;
+      } else {
+        banner.style.borderColor = 'var(--border-color)';
+        icon.style.background = 'rgba(245, 158, 11, 0.15)';
+        icon.style.color = 'var(--warning)';
+        icon.innerText = '🔒';
+        title.innerText = 'Modo Protegido por Senha';
+        title.style.color = '#fff';
+        sub.innerText = 'Insira a senha mestra para desbloquear ações operacionais e edição de prompts/guardrails.';
+        btn.innerText = '🔓 Desbloquear';
+        btn.style.background = 'var(--primary)';
+        btn.style.borderColor = 'var(--primary)';
+        btn.style.color = '#fff';
+        input.disabled = false;
+        input.placeholder = 'Senha mestre...';
+      }
+    }
+
+    async function unlockAdminMode() {
+      const stored = getStoredAdminPassword();
+      if (stored) {
+        // Ação de bloquear
+        setStoredAdminPassword('');
+        showToast('Sessão administrativa bloqueada.', '🔒');
+        return;
+      }
+
+      const input = document.getElementById('adminPasswordInput');
+      const candidate = (input.value || '').trim();
+      if (!candidate) {
+        showToast('Por favor, digite a senha administrativa.', '⚠️');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/v1/admin/auth/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': candidate
+          },
+          body: JSON.stringify({ password: candidate })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.authenticated) {
+          setStoredAdminPassword(candidate);
+          showToast('Acesso administrativo desbloqueado com sucesso!', '🔓');
+        } else {
+          showToast('Senha incorreta. Acesso não permitido.', '❌');
+        }
+      } catch (err) {
+        showToast(`Erro ao validar senha: ${err}`, '❌');
+      }
+    }
+
+    async function ensureAdminPasswordPrompt() {
+      let pwd = getStoredAdminPassword();
+      if (pwd) return pwd;
+
+      const inputVal = (document.getElementById('adminPasswordInput')?.value || '').trim();
+      if (inputVal) {
+        pwd = inputVal;
+      } else {
+        pwd = prompt('Digite a senha mestra de administração:');
+      }
+
+      if (!pwd) return null;
+
+      try {
+        const resp = await fetch('/v1/admin/auth/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({ password: pwd })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.authenticated) {
+          setStoredAdminPassword(pwd);
+          return pwd;
+        } else {
+          showToast('Senha administrativa incorreta!', '❌');
+          return null;
+        }
+      } catch (err) {
+        showToast(`Erro ao verificar senha: ${err}`, '❌');
+        return null;
+      }
+    }
+
+    async function loadAdminConfig() {
+      updateAuthUI();
+      try {
+        const resp = await fetch('/v1/admin/config');
+        const data = await resp.json();
+        if (data.status === 'success') {
+          currentAdminData = data;
+          renderPromptChips();
+          renderGuardrailsInputs(data.guardrails);
+        }
+      } catch (err) {
+        showToast(`Erro ao carregar configurações: ${err}`, '⚠️');
+      }
+    }
+
+    function renderPromptChips() {
+      const container = document.getElementById('promptsChipsBar');
+      container.innerHTML = '';
+
+      const keys = Object.keys(currentAdminData.metadata || currentAdminData.prompts || {});
+      if (keys.length === 0) return;
+
+      if (!keys.includes(activePromptKey)) {
+        activePromptKey = keys[0];
+      }
+
+      keys.forEach(k => {
+        const meta = currentAdminData.metadata[k] || { title: k, category: 'Geral' };
+        const chip = document.createElement('div');
+        chip.className = `prompt-chip ${k === activePromptKey ? 'active' : ''}`;
+        chip.innerText = `${meta.title}`;
+        chip.onclick = () => selectPromptKey(k);
+        container.appendChild(chip);
+      });
+
+      selectPromptKey(activePromptKey);
+    }
+
+    function selectPromptKey(k) {
+      activePromptKey = k;
+      document.querySelectorAll('.prompt-chip').forEach(c => {
+        c.classList.toggle('active', c.innerText === (currentAdminData.metadata[k]?.title || k));
+      });
+
+      const meta = currentAdminData.metadata[k] || {
+        title: k,
+        category: 'Geral',
+        description: 'Template de prompt ativo no sistema.',
+        variables: []
+      };
+
+      document.getElementById('activePromptTitle').innerText = meta.title;
+      document.getElementById('activePromptCategory').innerText = meta.category;
+      document.getElementById('activePromptDescription').innerText = meta.description;
+      
+      const varsEl = document.getElementById('activePromptVariables');
+      if (meta.variables && meta.variables.length > 0) {
+        varsEl.innerText = `Variáveis esperadas: ${meta.variables.join(', ')}`;
+      } else {
+        varsEl.innerText = 'Variáveis dinâmicas: Nenhuma (Texto direto)';
+      }
+
+      const editor = document.getElementById('promptEditorArea');
+      editor.value = currentAdminData.prompts[k] || '';
+    }
+
+    function renderGuardrailsInputs(guardrails) {
+      if (!guardrails) return;
+      Object.entries(guardrails).forEach(([k, val]) => {
+        const input = document.getElementById(`input_${k}`);
+        if (input) {
+          input.value = val;
+          updateGuardrailPreview(k);
+        }
+      });
+    }
+
+    function updateGuardrailPreview(k) {
+      const input = document.getElementById(`input_${k}`);
+      const valSpan = document.getElementById(`val_${k}`);
+      if (!input || !valSpan) return;
+
+      let val = input.value;
+      if (k.includes('timeout')) {
+        valSpan.innerText = `${val}s`;
+      } else if (k.includes('ttl')) {
+        valSpan.innerText = `${val} dias`;
+      } else {
+        valSpan.innerText = val;
+      }
+    }
+
+    async function saveAdminConfig() {
+      const pwd = await ensureAdminPasswordPrompt();
+      if (!pwd) return;
+
+      // Salva o prompt atualmente aberto
+      const editor = document.getElementById('promptEditorArea');
+      if (activePromptKey && editor) {
+        currentAdminData.prompts[activePromptKey] = editor.value;
+      }
+
+      // Lê todos os inputs de guardrails
+      const guardrailsToSave = {};
+      const inputs = document.querySelectorAll('[id^="input_"]');
+      inputs.forEach(inp => {
+        const key = inp.id.replace('input_', '');
+        guardrailsToSave[key] = parseFloat(inp.value);
+      });
+
+      const payload = {
+        prompts: currentAdminData.prompts,
+        guardrails: guardrailsToSave,
+        admin_password: pwd
+      };
+
+      try {
+        const resp = await fetch('/v1/admin/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast('Configurações e Guardrails salvos com sucesso!', '✅');
+          loadAdminConfig();
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha incorreta! Não foi possível salvar.', '❌');
+        } else {
+          showToast(`Erro ao salvar: ${res.message || 'Falha'}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro ao conectar com o servidor: ${err}`, '❌');
+      }
+    }
+
+    async function resetAllConfig() {
+      if (!confirm('Atenção: Deseja restaurar todos os prompts e guardrails para os padrões originais mantidos na memória permanente?')) {
+        return;
+      }
+
+      const pwd = await ensureAdminPasswordPrompt();
+      if (!pwd) return;
+
+      try {
+        const resp = await fetch('/v1/admin/config/reset', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({ admin_password: pwd })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast('Padrões permanentes restaurados com sucesso!', '⏮️');
+          loadAdminConfig();
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha incorreta! Operação cancelada.', '❌');
+        } else {
+          showToast(`Erro ao resetar: ${res.message}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro na requisição: ${err}`, '❌');
+      }
+    }
+
+    async function triggerAdminAction(endpoint, confirmMsg) {
+      if (!confirm(confirmMsg)) return;
+
+      const pwd = await ensureAdminPasswordPrompt();
+      if (!pwd) return;
+
+      showToast('Processando comando...', '⏳');
+      try {
+        const resp = await fetch(`/v1/admin/${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({ admin_password: pwd })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast(res.message || 'Ação executada com sucesso!', '✅');
+          if (endpoint.includes('cache')) {
+            loadDashboardData();
+          }
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha incorreta! Ação negada.', '❌');
+        } else {
+          showToast(`Erro: ${res.message || 'Falha na execução'}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro de conexão: ${err}`, '❌');
+      }
+    }
+
+    function showToast(text, icon = '✨') {
+      const toast = document.getElementById('adminToast');
+      document.getElementById('toastIcon').innerText = icon;
+      document.getElementById('toastText').innerText = text;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 4000);
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    // ---------------------------------------------------------
+    // LÓGICA DA ABA DE MODELOS E PRIORIDADES
+    // ---------------------------------------------------------
+    let currentModelsData = {};
+
+    async function loadModelsConfig() {
+      try {
+        const resp = await fetch('/v1/admin/models');
+        const data = await resp.json();
+        if (data.status === 'success') {
+          currentModelsData = data;
+          renderModelsCategories(data.categories);
+        }
+      } catch (err) {
+        showToast(`Erro ao carregar configurações de modelos: ${err}`, '⚠️');
+      }
+    }
+
+    function renderModelsCategories(categories) {
+      const container = document.getElementById('modelsCategoriesContainer');
+      container.innerHTML = '';
+
+      Object.entries(categories).forEach(([catKey, catData]) => {
+        const catCard = document.createElement('div');
+        catCard.className = 'config-section';
+        catCard.style.marginBottom = '0';
+        catCard.style.padding = '1.25rem';
+        
+        let html = `
+          <div style="font-weight: 600; font-size: 0.95rem; color: #fff; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <span>${catData.title || catKey}</span>
+            ${catData.customized ? '<span class="badge badge-cache">Modificado</span>' : ''}
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.4;">
+            ${catData.description || 'Configuração de modelos para ' + catKey}
+          </div>
+          <div class="models-priority-list" data-category="${catKey}" style="display: flex; flex-direction: column; gap: 10px;">
+        `;
+
+        // Render select elements for current active models chain
+        const availableOptions = catData.options || catData.factory_models;
+        catData.active_models.forEach((activeModel, idx) => {
+          html += `
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge badge-route" style="width: 90px; text-align: center; flex-shrink: 0;">Prioridade ${idx + 1}</span>
+              <select class="guardrail-input model-select" style="flex: 1; padding: 8px; border-radius: 6px;">
+          `;
+          availableOptions.forEach(optModel => {
+            const isSelected = optModel === activeModel ? 'selected' : '';
+            const catItem = currentModelsData.catalog && currentModelsData.catalog[optModel];
+            const label = catItem ? `${optModel} — ${catItem.label}` : optModel;
+            html += `<option value="${escapeHtml(optModel)}" ${isSelected}>${escapeHtml(label)}</option>`;
+          });
+          html += `</select></div>`;
+        });
+
+        html += `</div>`;
+        catCard.innerHTML = html;
+        container.appendChild(catCard);
+      });
+    }
+
+    async function saveModelsConfig() {
+      const pwd = await ensureAdminPasswordPrompt();
+      if (!pwd) return;
+
+      const payload = { category_models: {} };
+      const lists = document.querySelectorAll('.models-priority-list');
+      
+      lists.forEach(list => {
+        const catKey = list.getAttribute('data-category');
+        const selects = list.querySelectorAll('.model-select');
+        const models = [];
+        selects.forEach(sel => {
+          // Add to array if not duplicate (prevent duplicate priorities which might confuse backend, though it cleans it)
+          if (!models.includes(sel.value)) {
+            models.push(sel.value);
+          }
+        });
+        payload.category_models[catKey] = models;
+      });
+
+      try {
+        const resp = await fetch('/v1/admin/models', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast('Prioridades de modelos atualizadas com sucesso!', '✅');
+          loadModelsConfig();
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha incorreta! Não foi possível salvar.', '❌');
+        } else {
+          showToast(`Erro ao salvar: ${res.message || 'Falha'}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro ao conectar: ${err}`, '❌');
+      }
+    }
+
+    async function resetModelsConfig() {
+      if (!confirm('Deseja restaurar as prioridades de modelos para a configuração original de fábrica?')) return;
+      
+      const pwd = await ensureAdminPasswordPrompt();
+      if (!pwd) return;
+
+      try {
+        const resp = await fetch('/v1/admin/models/reset', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({ admin_password: pwd })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast('Modelos restaurados para padrão de fábrica!', '⏮️');
+          loadModelsConfig();
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha incorreta! Operação cancelada.', '❌');
+        } else {
+          showToast(`Erro ao resetar: ${res.message}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro na requisição: ${err}`, '❌');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initDashboard);
+  </script>
+</body>
+</html>

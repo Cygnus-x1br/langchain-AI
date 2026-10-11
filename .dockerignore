@@ -1,0 +1,8 @@
+qdrant_data/
+generated_images/
+logs/
+.git/
+__pycache__/
+*.pyc
+.env
+.backup/

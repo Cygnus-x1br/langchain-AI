@@ -1,0 +1,56 @@
+# Arquivos de Variáveis de Ambiente e Segredos
+.env
+.env.*
+!.env.example
+
+# Logs de Execução e Auditoria
+logs/*.jsonl
+logs/*.log
+*.log
+
+# Dados do Banco Vetorial e Documentos
+qdrant_data/
+documents/*
+!documents/.gitkeep
+
+# Caches e Ambientes Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Backups e Arquivos de IDE
+.backup/
+*.bak
+*.swp
+*~
+.vscode/
+.idea/
+.DS_Store
+
+# Banco de Dados Local SQLite
+data/
+*.db
+
+# Imagens/vídeos gerados em runtime
+generated_images/
+

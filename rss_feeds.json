@@ -1,0 +1,262 @@
+{
+  "feeds": [
+    {
+      "name": "MIT Technology Review",
+      "url": "https://www.technologyreview.com/feed/",
+      "category": "tecnologia_ia",
+      "lang": "en"
+    },
+    {
+      "name": "OpenAI News & Research Blog",
+      "url": "https://openai.com/news/rss.xml",
+      "category": "inteligencia_artificial",
+      "lang": "en"
+    },
+    {
+      "name": "Simon Willison Weblog (AI & Software Eng)",
+      "url": "https://simonwillison.net/atom/everything/",
+      "category": "inteligencia_artificial",
+      "lang": "en"
+    },
+    {
+      "name": "BleepingComputer (Segurança & Infraestrutura)",
+      "url": "https://www.bleepingcomputer.com/feed/",
+      "category": "tecnologia_seguranca",
+      "lang": "en"
+    },
+    {
+      "name": "Manual do Usuário (Tech & Cultura Digital BR)",
+      "url": "https://manualdousuario.net/feed/",
+      "category": "tecnologia_nicho",
+      "lang": "pt"
+    },
+    {
+      "name": "MacMagazine (Apple & Gadgets Nicho BR)",
+      "url": "https://macmagazine.com.br/feed/",
+      "category": "tecnologia_nicho",
+      "lang": "pt"
+    },
+    {
+      "name": "Olhar Digital (Tecnologia & Inovação)",
+      "url": "https://olhardigital.com.br/feed/",
+      "category": "tecnologia",
+      "lang": "pt"
+    },
+    {
+      "name": "Engadget (Inovação & Hardware)",
+      "url": "https://www.engadget.com/rss.xml",
+      "category": "tecnologia",
+      "lang": "en"
+    },
+    {
+      "name": "Tecnoblog",
+      "url": "https://tecnoblog.net/feed/",
+      "category": "tecnologia",
+      "lang": "pt"
+    },
+    {
+      "name": "Hacker News",
+      "url": "https://news.ycombinator.com/rss",
+      "category": "tecnologia_ia",
+      "lang": "en"
+    },
+    {
+      "name": "TechCrunch",
+      "url": "https://techcrunch.com/feed/",
+      "category": "startups_tech",
+      "lang": "en"
+    },
+    {
+      "name": "The Verge",
+      "url": "https://www.theverge.com/rss/index.xml",
+      "category": "tecnologia_geral",
+      "lang": "en"
+    },
+    {
+      "name": "Ars Technica",
+      "url": "https://feeds.arstechnica.com/arstechnica/index",
+      "category": "tecnologia_ciencia",
+      "lang": "en"
+    },
+    {
+      "name": "Nature News (Ciência Global de Ponta)",
+      "url": "https://www.nature.com/nature.rss",
+      "category": "ciencia",
+      "lang": "en"
+    },
+    {
+      "name": "Scientific American",
+      "url": "http://rss.sciam.com/ScientificAmerican-Global",
+      "category": "ciencia",
+      "lang": "en"
+    },
+    {
+      "name": "Science Daily (Descobertas Científicas)",
+      "url": "https://www.sciencedaily.com/rss/all.xml",
+      "category": "ciencia",
+      "lang": "en"
+    },
+    {
+      "name": "Revista Pesquisa FAPESP (Ciência BR)",
+      "url": "https://revistapesquisa.fapesp.br/feed/",
+      "category": "ciencia",
+      "lang": "pt"
+    },
+    {
+      "name": "Canaltech Ciência & Espaço",
+      "url": "https://canaltech.com.br/rss/ciencia/",
+      "category": "ciencia",
+      "lang": "pt"
+    },
+    {
+      "name": "Futurity (Pesquisa Universitária Global)",
+      "url": "https://www.futurity.org/feed/",
+      "category": "ciencia",
+      "lang": "en"
+    },
+    {
+      "name": "Drauzio Varella (Saúde e Medicina BR)",
+      "url": "https://drauziovarella.uol.com.br/feed/",
+      "category": "saude",
+      "lang": "pt"
+    },
+    {
+      "name": "Porvir (Inovações na Educação BR)",
+      "url": "https://porvir.org/feed/",
+      "category": "educacao",
+      "lang": "pt"
+    },
+    {
+      "name": "Guia do Estudante (Educação & Vestibulares)",
+      "url": "https://guiadoestudante.abril.com.br/feed/",
+      "category": "educacao",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Notícias (Capa)",
+      "url": "https://rss.uol.com.br/feed/noticias.xml",
+      "category": "noticias_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "Tilt UOL (Tecnologia & Vida Digital)",
+      "url": "https://rss.uol.com.br/feed/tecnologia.xml",
+      "category": "tecnologia_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Economia & Finanças",
+      "url": "https://rss.uol.com.br/feed/economia.xml",
+      "category": "economia_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Educação",
+      "url": "https://rss.uol.com.br/feed/educacao.xml",
+      "category": "educacao_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Carros (Mobilidade & Veículos)",
+      "url": "https://rss.uol.com.br/feed/carros.xml",
+      "category": "veiculos_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Jogos & Games",
+      "url": "https://rss.uol.com.br/feed/jogos.xml",
+      "category": "games_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Esporte",
+      "url": "https://rss.uol.com.br/feed/esporte.xml",
+      "category": "esportes_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "UOL Cinema & Entretenimento",
+      "url": "https://rss.uol.com.br/feed/cinema.xml",
+      "category": "entretenimento_uol",
+      "lang": "pt"
+    },
+    {
+      "name": "G1 Tecnologia",
+      "url": "https://g1.globo.com/rss/g1/tecnologia/",
+      "category": "tecnologia",
+      "lang": "pt"
+    },
+    {
+      "name": "G1 Política",
+      "url": "https://g1.globo.com/rss/g1/politica/",
+      "category": "politica",
+      "lang": "pt"
+    },
+    {
+      "name": "G1 Educação",
+      "url": "https://g1.globo.com/rss/g1/educacao/",
+      "category": "educacao",
+      "lang": "pt"
+    },
+    {
+      "name": "G1 Pop & Arte",
+      "url": "https://g1.globo.com/rss/g1/pop-arte/",
+      "category": "cultura_entretenimento",
+      "lang": "pt"
+    },
+    {
+      "name": "InfoMoney Mercados",
+      "url": "https://www.infomoney.com.br/mercados/feed/",
+      "category": "economia_mercados",
+      "lang": "pt"
+    },
+    {
+      "name": "G1 Economia",
+      "url": "https://g1.globo.com/rss/g1/economia/",
+      "category": "economia",
+      "lang": "pt"
+    },
+    {
+      "name": "GE Globo (Esportes)",
+      "url": "https://ge.globo.com/rss/ge/",
+      "category": "esportes",
+      "lang": "pt"
+    },
+    {
+      "name": "BBC News Brasil",
+      "url": "https://feeds.bbci.co.uk/portuguese/rss.xml",
+      "category": "noticias_brasil_mundo",
+      "lang": "pt"
+    },
+    {
+      "name": "BBC World News",
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+      "category": "internacional",
+      "lang": "en"
+    },
+    {
+      "name": "New York Times (World)",
+      "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+      "category": "internacional",
+      "lang": "en"
+    },
+    {
+      "name": "Deutsche Welle (Global)",
+      "url": "https://rss.dw.com/rdf/rss-en-all",
+      "category": "internacional",
+      "lang": "en"
+    },
+    {
+      "name": "Al Jazeera English",
+      "url": "https://www.aljazeera.com/xml/rss/all.xml",
+      "category": "internacional",
+      "lang": "en"
+    },
+    {
+      "name": "El País (Internacional)",
+      "url": "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada",
+      "category": "internacional",
+      "lang": "es"
+    }
+  ]
+}
