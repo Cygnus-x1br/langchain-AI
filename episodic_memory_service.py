@@ -366,3 +366,63 @@ def auto_curate_frequent_queries(user_id: str, prompt: str, category: str, respo
             importance=4,
             source_title=title
         )
+
+
+def remove_episodic_memories_for_prompt(user_id: str, prompt: str, min_score: float = 0.65) -> int:
+    """
+    Remove memórias episódicas do usuário armazenadas no Qdrant que tenham alta correlação
+    com um prompt que recebeu avaliação negativa (thumbsDown). Evita poluição de preferências.
+    """
+    if not user_id or not prompt:
+        return 0
+
+    client = get_qdrant_client()
+    collections = [c.name for c in client.get_collections().collections]
+    if USER_EPISODIC_COLLECTION not in collections:
+        return 0
+
+    deleted_count = 0
+    try:
+        user_filter = models.Filter(
+            must=[models.FieldCondition(key="metadata.user_id", match=models.MatchValue(value=user_id))]
+        )
+        vector = embeddings.embed_query(prompt)
+        hits = client.query_points(
+            collection_name=USER_EPISODIC_COLLECTION,
+            query=vector,
+            query_filter=user_filter,
+            limit=10,
+            score_threshold=min_score
+        ).points
+        ids_to_del = [p.id for p in hits if p.id is not None]
+
+        if ids_to_del:
+            client.delete(
+                collection_name=USER_EPISODIC_COLLECTION,
+                points_selector=models.PointIdsList(points=ids_to_del)
+            )
+            deleted_count = len(ids_to_del)
+            print(f"[Feedback Purge Episódica] Removidas {deleted_count} memórias episódicas para usuário '{user_id}'.")
+    except Exception as e:
+        print(f"[Aviso Remoção Memória Episódica por Feedback]: {e}")
+
+    # Também ajusta perfil de interações
+    rollback_user_profile_category(user_id)
+
+    return deleted_count
+
+
+def rollback_user_profile_category(user_id: str):
+    """Ajusta o perfil do usuário caso uma resposta tenha recebido feedback negativo."""
+    if not user_id or user_id in ["anon", "default_user"]:
+        return
+    try:
+        profiles = load_all_user_profiles()
+        if user_id in profiles:
+            p = profiles[user_id]
+            if p.get("total_interactions", 0) > 0:
+                p["total_interactions"] -= 1
+            save_all_user_profiles(profiles)
+    except Exception as e:
+        print(f"[Aviso Rollback Perfil Usuário]: {e}")
+

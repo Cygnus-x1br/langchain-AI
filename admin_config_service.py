@@ -30,7 +30,9 @@ DEFAULT_GUARDRAILS = {
     "fact_auditor_timeout_seconds": 8.0,
     "user_memory_default_ttl_days": 30,
     "deep_scrape_timeout_seconds": 6.0,
-    "search_engine_max_results": 4
+    "search_engine_max_results": 4,
+    "classifier_engine": "SHADOW_MODE",
+    "semantic_router_threshold": 0.78
 }
 
 # Definições dos Prompts Padrão com Metadados
@@ -468,6 +470,11 @@ def save_runtime_config(new_config: Dict[str, Any]) -> Dict[str, Any]:
     if "guardrails" in new_config and isinstance(new_config["guardrails"], dict):
         for k, v in new_config["guardrails"].items():
             if k in defaults["guardrails"]:
+                if k == "classifier_engine":
+                    val_str = str(v).strip().upper()
+                    if val_str in ("V2_SEMANTIC_VECTOR", "SHADOW_MODE", "V1_LEGACY"):
+                        guardrails_to_save[k] = val_str
+                    continue
                 try:
                     num_val = float(v)
                     # Limitações de bom senso para evitar quebras
@@ -550,9 +557,32 @@ def get_prompt_text(prompt_key: str) -> str:
     return defaults["prompts"].get(prompt_key, "")
 
 def get_guardrail_value(guardrail_key: str, default_val: Any = None) -> Any:
-    """Retorna o valor numérico de um guardrail configurado."""
+    """Retorna o valor de um guardrail configurado."""
     config = load_runtime_config()
     val = config.get("guardrails", {}).get(guardrail_key)
     if val is not None:
         return val
     return DEFAULT_GUARDRAILS.get(guardrail_key, default_val)
+
+
+def get_classifier_engine() -> str:
+    """
+    Retorna o motor de classificação configurado:
+    - 'V2_SEMANTIC_VECTOR' (Novo motor vetorial + JSON Schema)
+    - 'SHADOW_MODE' (V2 oficial de resposta + V1 em background para comparação)
+    - 'V1_LEGACY' (Motor legado Dicionário + Regex + LLM)
+    Padrão: 'SHADOW_MODE'
+    """
+    engine = str(get_guardrail_value("classifier_engine", "SHADOW_MODE")).strip().upper()
+    if engine in ("V2_SEMANTIC_VECTOR", "SHADOW_MODE", "V1_LEGACY"):
+        return engine
+    return "SHADOW_MODE"
+
+
+def get_semantic_router_threshold() -> float:
+    """Retorna o limiar mínimo de similaridade de cosseno para o Roteador Vetorial V2 (padrão 0.78)."""
+    try:
+        return float(get_guardrail_value("semantic_router_threshold", 0.78))
+    except Exception:
+        return 0.78
+

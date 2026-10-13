@@ -21,6 +21,10 @@ LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "sk-anything")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://10.100.10.31:8080")
 LIBRECHAT_MONGO_URI = os.getenv("LIBRECHAT_MONGO_URI", "mongodb://10.100.10.30:27017/LibreChat")
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
+POSTGRES_URL = os.getenv("POSTGRES_URL", os.getenv("DATABASE_URL", ""))
+DEFAULT_SQLITE_DB = os.getenv("DEFAULT_SQLITE_DB", "workspace.db")
+CODE_RUNNER_TIMEOUT = int(os.getenv("CODE_RUNNER_TIMEOUT", "15"))
 
 # Feature Flags
 ORCHESTRATOR_DEBUG = os.getenv("ORCHESTRATOR_DEBUG", "false").lower() in ("true", "1", "yes")
@@ -45,33 +49,27 @@ IMAGE_STORAGE_DIR = os.getenv("IMAGE_STORAGE_DIR", "/app/generated_images")
 os.makedirs(IMAGE_STORAGE_DIR, exist_ok=True)
 SERVER_PUBLIC_URL = os.getenv("SERVER_PUBLIC_URL", "https://ai.jmarc.com.br/images/generated").rstrip("/")
 
+# Diretório de Workspace Sandbox para MCP Filesystem
+WORKSPACE_PATH = os.getenv("WORKSPACE_PATH", "/app/workspace")
+os.makedirs(WORKSPACE_PATH, exist_ok=True)
+
 def sync_image_to_librechat(local_filepath: str):
     """
-    Sincroniza a imagem gerada localmente com a pasta pública do LibreChat na VM1,
-    garantindo acesso via https://ai.jmarc.com.br/images/generated/<filename>.
+    Garante que a imagem gerada esteja disponível no diretório estático público local.
+    Com o Nginx Proxy Manager roteando /images/generated diretamente para o Orquestrador (FastAPI),
+    o arquivo é servido via HTTP diretamente pelo Orquestrador sem necessidade de SCP/SSH.
     """
     try:
         import shutil
-        import subprocess
         fname = os.path.basename(local_filepath)
-
-        # 1. Se montado diretamente no container (ex: via volume compartilhado)
-        target_direct = f"/librechat_images/generated/{fname}"
-        if os.path.exists("/librechat_images/generated"):
-            shutil.copy2(local_filepath, target_direct)
-            print(f"[Sync LibreChat] Imagem copiada diretamente para {target_direct}")
-            return
-
-        # 2. Envio via SSH/SCP usando chave privada antigravity (executa com timeout para garantir que o arquivo chegou antes do response)
-        ssh_key = "/root/.ssh/antigravity" if os.path.exists("/root/.ssh/antigravity") else "/home/jean/.ssh/antigravity"
-        cmd = f"scp -F /dev/null -o StrictHostKeyChecking=no -i {ssh_key} '{local_filepath}' jean@10.100.10.30:~/LibreChat/images/generated/{fname}"
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
-        if res.returncode == 0:
-            print(f"[Sync LibreChat] Sincronização concluída com sucesso para 10.100.10.30: {fname}")
+        dest = os.path.join(IMAGE_STORAGE_DIR, fname)
+        if os.path.abspath(local_filepath) != os.path.abspath(dest):
+            shutil.copy2(local_filepath, dest)
+            print(f"[Static Storage] Imagem copiada para storage público: {dest}")
         else:
-            print(f"[Sync LibreChat Erro SCP]: {res.stderr}")
+            print(f"[Static Storage] Imagem disponível para acesso público: {fname}")
     except Exception as e:
-        print(f"[Aviso Sincronização Imagem LibreChat]: {e}")
+        print(f"[Aviso Storage Imagem]: {e}")
 
 
 def write_log(entry: dict):
@@ -309,12 +307,15 @@ def is_context_dependent_prompt(prompt: str, messages: list) -> bool:
 
 def clean_location_query(prompt: str) -> str:
     """Extrai a provável cidade ou localidade de uma pergunta sobre clima."""
-    cleaned = prompt
+    # 1. Remove qualquer bloco de contexto episódico ou diretrizes anexadas
+    cleaned = re.sub(r"(?is):?\s*\[CONTEXTO[\s\S]*?\]", "", prompt)
+    cleaned = re.sub(r"(?is)\(Utilize[\s\S]*?\)", "", cleaned)
+
     patterns_to_remove = [
-        r"(?i)como\s+est[aá]\s+o\s+tempo\s+(em|de|para|na|no)?",
-        r"(?i)qual\s+(é(\s+a)?|a)?\s*previs[aã]o\s+d[oe]\s+tempo\s+(para|em|de|na|no)?",
-        r"(?i)qual\s+(é(\s+a)?|a)?\s*(temperatura|clima|previs[aã]o)\s+(para|em|de|na|no)?",
-        r"(?i)vai\s+chover\s+(hoje\s+)?(em|de|para|na|no)?",
+        r"(?i)como\s+est[aá]\s+(o\s+)?(tempo|clima|a\s+temperatura)\s+(em|de|para|na|no)?",
+        r"(?i)como\s+(vai\s+estar|fica|vai\s+ficar)\s+o\s+(tempo|clima)\s+(em|de|para|na|no)?",
+        r"(?i)qual\s+(é(\s+a)?|a)?\s*(previs[aã]o|temperatura|clima)\s*(d[oe]\s+tempo)?\s*(para|em|de|na|no)?",
+        r"(?i)(vai\s+chover|chove|chovendo)\s+(hoje\s+)?(em|de|para|na|no)?",
         r"(?i)previs[aã]o\s+d[oe]\s+tempo\s+(para|em|de|na|no)?",
         r"(?i)\b(previs[aã]o|temperatura|clima|tempo)\s+(para|em|de|na|no)?",
         r"(?i)\b(hoje|agora|amanh[aã]|para hoje|de hoje|nesta semana)\b"
@@ -322,7 +323,7 @@ def clean_location_query(prompt: str) -> str:
     for pat in patterns_to_remove:
         cleaned = re.sub(pat, " ", cleaned)
 
-    cleaned = cleaned.replace("?", "").replace("!", "").strip()
+    cleaned = cleaned.replace("?", "").replace("!", "").replace(":", "").strip()
     cleaned = re.sub(r"^(em|de|para|na|no)\s+", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 

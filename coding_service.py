@@ -116,12 +116,17 @@ def prepare_coding_messages(messages: List[Dict[str, Any]], tier: str = "FAST") 
         elif tier == "EXEC":
             target_prompt = CODING_EXEC_PROMPT
 
+    mcp_notice = (
+        "\n[MCP FILESYSTEM DISPONÍVEL]: O ambiente possui um diretório de trabalho seguro montado em '/app/workspace'. "
+        "Se o usuário pedir para gerar, salvar ou organizar arquivos no workspace, forneça código completo e indique a localização no workspace."
+    )
+
     if system_index is None:
-        msgs.insert(0, {"role": "system", "content": target_prompt})
+        msgs.insert(0, {"role": "system", "content": target_prompt + mcp_notice})
     else:
         curr_sys = msgs[system_index].get("content", "")
         if "CÓDIGO COMPLETO" not in curr_sys and "DIRETRIZES" not in curr_sys:
-            enhanced_sys = f"{curr_sys}\n\n[DIRETRIZES DE ENGENHARIA DE SOFTWARE - NÍVEL {tier}]\n{target_prompt}"
+            enhanced_sys = f"{curr_sys}\n\n[DIRETRIZES DE ENGENHARIA DE SOFTWARE - NÍVEL {tier}]\n{target_prompt}{mcp_notice}"
             msgs[system_index]["content"] = enhanced_sys
 
     return msgs

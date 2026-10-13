@@ -13,6 +13,8 @@ from config import (
     get_conversation_state
 )
 from prompts import CLASSIFICATION_PROMPT_TEMPLATE
+from dictionary_service import match_universal_dictionary
+from user_lexicon_service import match_user_lexicon
 
 # Instancia o LLM de classificação primário e fallbacks dinâmicos com cache
 _classifier_chains: Dict[str, Any] = {}
@@ -25,7 +27,7 @@ def get_classifier_chain(model_name: str):
             api_key=LITELLM_API_KEY,
             model=model_name,
             temperature=0.0,
-            max_tokens=150,
+            max_tokens=350,
             timeout=8.0
         )
         _classifier_chains[model_name] = CLASSIFICATION_PROMPT_TEMPLATE | llm | StrOutputParser()
@@ -102,10 +104,76 @@ def quick_rule_classifier(prompt: str) -> Optional[str]:
     if re.search(data_export_pattern, p):
         return "DATA_EXPORT_CHART"
 
-    # Programação / Código / Scripts (Fast-Pass 0ms)
-    coding_pattern = r"(escreva\s+um(a)?\s+(função|script|código|classe|programa|query|sql|regex)|crie\s+um(a)?\s+(script|função|código|api)|em\s+(python|javascript|typescript|bash|sql|html|css|php|java|c\+\+|rust|golang)|como\s+fazer\s+em\s+python|como\s+programar|depurar|debug|dockerfile|docker-compose|código\s+para)"
+    # Programação / Código / Scripts / Infraestrutura / Servidores / Linux (Fast-Pass 0ms)
+    coding_pattern = (
+        r"(escreva\s+um(a)?\s+(função|script|código|classe|programa|query|sql|regex)|crie\s+um(a)?\s+(script|função|código|api)|em\s+(python|javascript|typescript|bash|sql|html|css|php|java|c\+\+|rust|golang)|como\s+fazer\s+em\s+python|como\s+programar|depurar|debug|dockerfile|docker-compose|código\s+para)"
+        r"|\b(servidor\s+smb|servidor\s+de\s+arquivos|configurar\s+smb|compartilhamento\s+smb|smbclient|samba|powershell|set-smbclientconfiguration|systemctl|iptables|chmod|chown)\b"
+        r"|\b(como\s+configurar\s+acesso\s+a\s+servidor|configurar\s+acesso\s+ao?\s+servidor|conectar\s+ao?\s+servidor\s+smb)\b"
+    )
     if re.search(coding_pattern, p):
+        # Se também envolver workspace de forma explícita, prioriza MCP_FILESYSTEM
+        if "workspace" in p:
+            return "MCP_FILESYSTEM"
         return "CODING"
+
+    # MCP Filesystem / Workspace Sandbox (Fast-Pass 0ms)
+    filesystem_pattern = (
+        r"\b(workspace|no\s+workspace|do\s+workspace|na\s+sandbox|sandbox\s+de\s+arquivos)\b"
+        r"|\b(listar|ver|quais)\s+(os\s+)?(arquivos|pastas|diret[oó]rios)\s+(do|no|na)\s+(workspace|sandbox)\b"
+        r"|\b(crie|criar|gere|gerar|salve|salvar|grave|gravar|escreva|escrever)\s+(um\s+)?(arquivo|script|c[oó]digo|pasta)\s+.*(no|para\s+o)\s+workspace\b"
+        r"|\b(leia|ler|abra|abrir|mostre|mostrar|conte[uú]do\s+d[oe])\s+(o\s+)?(arquivo|script)\s+.*(do|no)\s+workspace\b"
+        r"|\b(delete|deletar|remova|remover|apague|apagar)\s+(o\s+)?(arquivo|pasta)\s+.*(do|no)\s+workspace\b"
+        r"|\b(busque|buscar|pesquise|pesquisar|procure|procurar)\s+.*(no|do)\s+workspace\b"
+    )
+    if re.search(filesystem_pattern, p):
+        return "MCP_FILESYSTEM"
+
+    # MCP Fetch / Extração e Leitura de Páginas Web via URL (Fast-Pass 0ms)
+    fetch_pattern = (
+        r"\b(mcp\s*fetch|fetch)\b"
+        r"|https?://[^\s]+\s+.*(leia|ler|acesse|acessar|extraia|extrair|resuma|resumir|o que diz|conte[uú]do|analise|analisar)"
+        r"|(leia|ler|acesse|acessar|extraia|extrair|resuma|resumir|mostre o conte[uú]do de|o que diz no?|analise|analisar|visite|visitar)\s+.*https?://[^\s]+"
+        r"|^(acesse|leia|abra|veja|extraia|resuma)\s+https?://[^\s]+"
+        r"|^https?://[^\s]+$"
+    )
+    if re.search(fetch_pattern, p):
+        return "MCP_FETCH"
+
+    # MCP Git / Controle de Versão de Código (Fast-Pass 0ms)
+    git_pattern = (
+        r"\b(mcp\s*git|git\s+status|git\s+diff|git\s+log|git\s+commit|git\s+branch|git\s+branches|git\s+checkout|git\s+init|git\s+show|git\s+add)\b"
+        r"|\b(status|diff|hist[oó]rico|commits?|branches?)\s+(do\s+git|no\s+git)\b"
+        r"|\b(commite|commitar|fazer\s+commit|fa[cç]a\s+um\s+commit|criar\s+um\s+commit)\b"
+    )
+    if re.search(git_pattern, p):
+        return "MCP_GIT"
+
+    # MCP Brave Search / Busca Web Independente (Fast-Pass 0ms)
+    brave_pattern = (
+        r"\b(mcp\s*brave|brave\s+search|busque\s+no\s+brave|pesquise\s+no\s+brave|procure\s+no\s+brave|no\s+brave\s+search)\b"
+    )
+    if re.search(brave_pattern, p):
+        return "MCP_BRAVE_SEARCH"
+
+    # MCP Database / Consultas SQL e Bancos de Dados (Fast-Pass 0ms)
+    db_pattern = (
+        r"\b(mcp\s*database|mcp\s*db|sqlite3|duckdb)\b"
+        r"|\b(listar|ver|quais|mostre|liste)\s+(as\s+)?(tabelas|views)\s+(do\s+banco|no\s+banco|de\s+dados)\b"
+        r"|\b(descreva|schema|estrutura\s+da\s+tabela)\s+[a-zA-Z0-9_]+\b"
+        r"|\b(execute|executar|rode|rodar|fazer|fa[çc]a)\s+(um[a]?\s+)?(query|consulta\s+sql|select|script\s+sql)\b"
+        r"|\b(SELECT\s+.*?\s+FROM\s+[a-zA-Z0-9_]+)\b"
+    )
+    if re.search(db_pattern, p, re.IGNORECASE):
+        return "MCP_DATABASE"
+
+    # MCP Code Runner / Execução Segura de Scripts e Terminal (Fast-Pass 0ms)
+    code_runner_pattern = (
+        r"\b(mcp\s*code\s*runner|mcp\s*runner|code\s*runner)\b"
+        r"|\b(execute|executar|rode|rodar)\s+(este|esse|o)?\s*(c[oó]digo|script|comando)\s+(python|bash|sh|no\s+terminal|no\s+bash)\b"
+        r"|\b(execute|executar|rode|rodar)\s+(o\s+)?script\s+[a-zA-Z0-9_\-./]+\.(py|sh|js)\b"
+    )
+    if re.search(code_runner_pattern, p, re.IGNORECASE):
+        return "MCP_CODE_RUNNER"
 
     # Raciocínio Pesado / Matemática Avançada / Xadrez / Física Teórica (Fast-Pass 0ms)
     heavy_reasoning_pattern = r"(equa[cç][aã]o\s+diferencial|c[aá]lculo\s+(avan[cç]ado|diferencial|integral)|derivada|integral|matriz(es)?|autovalor|autovetor|transformada\s+de\s+(laplace|fourier)|f[ií]sica\s+te[oó]rica|mec[aâ]nica\s+qu[aâ]ntica|relatividade\s+geral|partida\s+de\s+xadrez|jogada\s+de\s+xadrez|enigma\s+matem[aá]tico)"
@@ -127,17 +195,18 @@ def quick_rule_classifier(prompt: str) -> Optional[str]:
         return "SHORT_VIDEO"
 
     # Redes Sociais / Posts / Anúncios / Leads / Campanhas (Fast-Pass 0ms)
-    social_networks = r"(instagram|insta|linkedin|facebook|face|twitter|x\b|reddit|threads|tiktok|redes?\s+socia(is|l))"
-    social_content = r"(post\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|lead\w*|legenda\w*|carrossel\w*|thread\w*|copy\w*|story|stories|feed)"
+    social_networks = r"(?:\b(instagram|insta|linkedin|facebook|face|twitter|reddit|threads|tiktok|redes?\s+socia(is|l))\b|(?:\b(?:rede\s+x|no\s+x|do\s+x|twitter\s*/\s*x)\b))"
+    social_content = r"(post\w*|postagem\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|lead\w*|legenda\w*|carrossel\w*|thread\w*|copy\w*|story|stories|feed)"
     social_preps = r"(para|pro|pra|no|na|de|do|da|em)(\s+(o|a|os|as|um|uma))?"
 
     social_pattern = (
         rf"{social_content}\s+{social_preps}\s+{social_networks}\b"
         rf"|\b(criar|crie|fa[çc]a|gere|gerar|elabore|escreva|monte|produza)\s+(um[a]?\s+)?({social_content}\s+)?{social_preps}\s+{social_networks}\b"
-        rf"|\b(post\w*|publica\w*|an[uú]nc\w*)\s+{social_preps}\s+{social_networks}\b"
-        rf"|\b(post\w*|an[uú]nc\w*|campanha\w*)\s+(de|para)\s+(capta[cç]\w+|leads?|marketing|vendas|engajamento)\b"
-        rf"|\b(roteiro|ideia|estrat[eé]gia)\s+de\s+(post\w*|conte[uú]do)\s+{social_preps}\s+{social_networks}\b"
+        rf"|\b(post\w*|postagem\w*|publica\w*|an[uú]nc\w*)\s+{social_preps}\s+{social_networks}\b"
+        rf"|\b(post\w*|postagem\w*|an[uú]nc\w*|campanha\w*)\s+(de|para)\s+(capta[cç]\w+|leads?|marketing|vendas|engajamento)\b"
+        rf"|\b(roteiro|ideia|estrat[eé]gia)\s+de\s+(post\w*|postagem\w*|conte[uú]do)\s+{social_preps}\s+{social_networks}\b"
         rf"|{social_networks}\b.*(com\s+a\s+legenda|utilizando\s+a\s+imagem|use\s+a\s+imagem|hashtag)"
+        rf"|\b(criar|crie|fa[çc]a|gere|gerar|elabore|escreva|monte|produza)\s+(um[a]?\s+)?(postagem|post|publica[cç][aã]o)\b"
     )
     if re.search(social_pattern, p):
         return "SOCIAL_MEDIA_POST"
@@ -149,7 +218,7 @@ def quick_rule_classifier(prompt: str) -> Optional[str]:
         r"|^(gere|crie|desenhe)\s+.*(imagem|desenho|foto)"
         r"|\b(generate|create|draw)\s+(an?\s+)?(image|photo|picture|illustration|art)\b"
     )
-    if re.search(image_gen_pattern, p):
+    if re.search(image_gen_pattern, p) and not re.search(r"\b(post\w*|postagem\w*|publica[cç]\w*|carrossel|legenda)\b", p):
         return "IMAGE_GENERATION"
 
     # Conversa casual / Saudações / Cortesia / Chat informal (Fast-Pass 0ms)
@@ -164,18 +233,15 @@ def quick_rule_classifier(prompt: str) -> Optional[str]:
     return None
 
 
-async def classify_intent(
+async def classify_intent_v1(
     user_prompt: str,
     messages: list,
     last_user_msg: dict,
-    conversation_id: str = None
-) -> Tuple[str, str, Optional[str]]:
+    conversation_id: str = None,
+    user_id: str = None
+) -> Tuple[str, str, Optional[str], Optional[str]]:
     """
-    Classifica a intenção da mensagem considerando:
-    1. Regras estritas de títulos e anexos de imagem.
-    2. Continuidade Contextual de Sessão (preserva a rota anterior se for pergunta de acompanhamento).
-    3. Fast-Pass por Regex ultrarrápido (0ms).
-    4. Classificador LLM Semântico com fallback resiliente para modelo local.
+    Motor Classificador V1 (Legado): Dicionário Universal + Fast-pass Regex + LLM Livre.
     """
     has_image_now = message_has_image(last_user_msg)
     has_image_in_history = history_has_images(messages)
@@ -184,7 +250,16 @@ async def classify_intent(
     routing_method = "llm_classifier"
     raw_classifier_output = None
 
-    edit_keywords_pattern = r"(altere|mude|troque|edite|remova|adicione|coloque|substitua|modifique|transforme|apague|retire|pinte|trocar|mudar|editar|remover|adicionar|retocar|remove|change|replace|edit|modify)\b"
+    edit_keywords_pattern = (
+        r"\b(alter[ea]|alterar|altere|mud[ea]|mudar|mude|troqu?e|trocar|troca|"
+        r"edit[ea]|editar|edite|remov[ea]|remover|adicione?|adicionar|adiciona|"
+        r"coloqu?e|colocar|coloca|substitu[ai]|substituir|substitua|modifiqu?e|modificar|modifica|"
+        r"transform[ea]|transformar|transforme|apagu?e|apagar|apaga|retir[ea]|retirar|retire|"
+        r"pint[ea]|pintar|pinte|retoc[ea]|retocar|bot[ea]|botar|bota|p[oõ]e|ponha|pôr|"
+        r"insir[ea]|inserir|aplic[ea]|aplicar|cort[ea]|cortar|corte|recort[ea]|recortar|"
+        r"clarei[ea]|clarear|escure[çc][ea]|escurecer|ajust[ea]|ajustar|deix[ea]|deixar|"
+        r"fundo|background|remove|change|replace|edit|modify)\b"
+    )
     image_gen_keywords_pattern = (
         r"(gere|gerar|crie|criar|desenhe|desenhar|fa[çc]a|produza)\s+(uma?\s+)?(imagem|foto|desenho|ilustra[çc][aã]o|pintura|wallpaper|arte)\b"
         r"|(imagem|foto|desenho|ilustra[çc][aã]o|pintura)\s+d[oe]\s+"
@@ -199,6 +274,25 @@ async def classify_intent(
         print(f"[Orquestrador] Requisição de Título detectada -> Rota: {category}")
         return category, routing_method, None, None
 
+    # 1.1. Consulta ao Dicionário Universal de Termos e Intenções (0ms)
+    dict_match = match_universal_dictionary(
+        prompt=user_prompt,
+        has_image_now=has_image_now,
+        has_image_in_history=has_image_in_history
+    )
+    if dict_match:
+        category, routing_method = dict_match
+        print(f"[Orquestrador Dicionário] Correspondência encontrada -> Rota: {category} ({routing_method})")
+        return category, routing_method, None, None
+
+    # 1.2. Consulta ao Dicionário Personalizado do Usuário (Aprendizado Contínuo 0ms)
+    if user_id:
+        user_match = match_user_lexicon(user_id=user_id, prompt=user_prompt)
+        if user_match:
+            category, routing_method = user_match
+            print(f"[Orquestrador Lexicon Usuário] Padrão aprendido detectado para '{user_id}' -> Rota: {category} ({routing_method})")
+            return category, routing_method, None, None
+
     # 1.1. Vídeos Curtos / Reels / TikTok / Shorts / Vídeo Vertical
     short_video_pattern = (
         r"\b(crie|criar|gere|gerar|fa[çc]a|fazer|produza|produzir|elabore|monte)\s+(um[a]?\s+)?(v[ií]deo\s+curto|v[ií]deo\s+vertical|reels?|shorts?|tiktok|mini\s+v[ií]deo)\b"
@@ -212,23 +306,24 @@ async def classify_intent(
         return category, routing_method, None, None
 
     # 2. Post para Redes Sociais e Leads (precede edição e geração genérica de imagem)
-    social_networks = r"(instagram|insta|linkedin|facebook|face|twitter|x\b|reddit|threads|tiktok|redes?\s+socia(is|l))"
-    social_content = r"(post\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|lead\w*|legenda\w*|carrossel\w*|thread\w*|copy\w*|story|stories|feed)"
+    social_networks = r"(?:\b(instagram|insta|linkedin|facebook|face|twitter|reddit|threads|tiktok|redes?\s+socia(is|l))\b|(?:\b(?:rede\s+x|no\s+x|do\s+x|twitter\s*/\s*x)\b))"
+    social_content = r"(post\w*|postg\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|lead\w*|legenda\w*|carrossel\w*|thread\w*|copy\w*|story|stories|feed)"
     social_preps = r"(para|pro|pra|no|na|de|do|da|em)(\s+(o|a|os|as|um|uma))?"
 
     social_keywords_pattern = (
-        rf"{social_content}\s+{social_preps}\s+{social_networks}\b"
-        rf"|\b(criar|crie|fa[çc]a|gere|gerar|elabore|escreva|monte|produza)\s+(um[a]?\s+)?({social_content}\s+)?{social_preps}\s+{social_networks}\b"
-        rf"|\b(post\w*|publica\w*|an[uú]nc\w*)\s+{social_preps}\s+{social_networks}\b"
-        rf"|\b(post\w*|an[uú]nc\w*|campanha\w*)\s+(de|para)\s+(capta[cç]\w+|leads?|marketing|vendas|engajamento)\b"
+        rf"{social_content}\s+.*?{social_networks}\b"
+        rf"|\b(criar|crie|fa[çc]a|gere|gerar|elabore|escreva|monte|produza)\s+.*?{social_networks}\b"
+        rf"|\b(post\w*|postg\w*|publica\w*|an[uú]nc\w*)\s+{social_preps}\s+{social_networks}\b"
+        rf"|\b(post\w*|postg\w*|an[uú]nc\w*|campanha\w*)\s+(de|para)\s+(capta[cç]\w+|leads?|marketing|vendas|engajamento)\b"
         rf"|\b(roteiro|ideia|estrat[eé]gia)\s+de\s+(post\w*|conte[uú]do)\s+{social_preps}\s+{social_networks}\b"
         rf"|{social_networks}\b.*(com\s+a\s+legenda|utilizando\s+a\s+imagem|use\s+a\s+imagem|hashtag)"
     )
-    # Com imagem anexa, "post/publicação/legenda" já basta, mesmo sem citar a rede social
-    social_with_image_pattern = r"\b(post\w*|publica[cç]\w*|legenda\w*|redes?\s+socia(is|l))\b"
+    # Com imagem anexa ou citando redes, "post/publicação/legenda" já basta
+    social_with_image_pattern = r"\b(post\w*|postg\w*|publica[cç]\w*|legenda\w*|redes?\s+socia(is|l))\b"
     is_social_request = bool(re.search(social_keywords_pattern, user_prompt.lower())) or (
-        (has_image_now or has_image_in_history) and re.search(social_with_image_pattern, user_prompt.lower())
-    )
+        (has_image_now or has_image_in_history or "imagem" in user_prompt.lower() or "foto" in user_prompt.lower()) and re.search(social_with_image_pattern, user_prompt.lower())
+    ) or bool(re.search(social_networks, user_prompt.lower()) and re.search(r"\b(crie|criar|fa[çc]a|gere|gerar|escreva|monte|elabore)\b", user_prompt.lower()))
+
     if is_social_request:
         routing_method = "social_media_rule"
         category = "SOCIAL_MEDIA_POST"
@@ -244,6 +339,13 @@ async def classify_intent(
 
     # 4. Geração de Imagem Nova
     if re.search(image_gen_keywords_pattern, user_prompt.lower()):
+        # Se for pedido de imagem mas citou explicitamente uma rede social, desvia para post de rede social
+        if re.search(social_networks, user_prompt.lower()):
+            routing_method = "social_media_network_fallback_rule"
+            category = "SOCIAL_MEDIA_POST"
+            print(f"[Orquestrador] Pedido de imagem com rede social citada -> Desviado para: {category}")
+            return category, routing_method, None, None
+
         routing_method = "image_gen_rule"
         category = "IMAGE_GENERATION"
         print(f"[Orquestrador] Geração de Imagem detectada -> Rota: {category}")
@@ -260,6 +362,14 @@ async def classify_intent(
     last_category = session_state.get("last_category")
     last_model = session_state.get("last_model")
     is_followup = is_context_dependent_prompt(user_prompt, messages)
+
+    # Se a categoria anterior era SOCIAL_MEDIA_POST, mas a mensagem atual NÃO cita nenhuma rede social,
+    # postagem, imagem ou legenda, NUNCA herdar SOCIAL_MEDIA_POST!
+    if last_category == "SOCIAL_MEDIA_POST":
+        social_check_pattern = r"\b(post\w*|postg\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|legenda\w*|carrossel\w*|copy\w*|story|stories|feed|instagram|insta|linkedin|facebook|twitter|tiktok|hashtag|foto|imagem)\b"
+        if not re.search(social_check_pattern, user_prompt.lower()):
+            is_followup = False
+            last_category = None
 
     # Se for pergunta de acompanhamento / continuação (ex: 'E para Senador?', 'E amanhã?', 'E em Santos?', 'Faça uma dissertação sobre o tema')
     if is_followup and last_category:
@@ -363,35 +473,48 @@ async def classify_intent(
             category = cat_match.group(1).strip()
         else:
             cat_matches = re.findall(
-                r"\b(DOCUMENT_RAG|WEATHER_INFO|REALTIME_SEARCH|CASUAL_CHAT|CODING|LOCAL_THINKING|HEAVY_REASONING|FACTUAL_GENERAL|VISION|IMAGE_GENERATION|IMAGE_EDIT|SOCIAL_MEDIA_POST|DATA_EXPORT_CHART)\b",
+                r"\b(DOCUMENT_RAG|WEATHER_INFO|REALTIME_SEARCH|CASUAL_CHAT|CODING|LOCAL_THINKING|HEAVY_REASONING|FACTUAL_GENERAL|VISION|IMAGE_GENERATION|IMAGE_EDIT|SOCIAL_MEDIA_POST|DATA_EXPORT_CHART|SHORT_VIDEO|MCP_FILESYSTEM|MCP_FETCH|MCP_GIT|MCP_BRAVE_SEARCH|MCP_DATABASE|MCP_CODE_RUNNER)\b",
                 clean_raw.upper()
             )
             if cat_matches:
                 category = cat_matches[-1]
             else:
                 raw_upper = clean_raw.upper()
-                if any(w in raw_upper for w in ["SOCIAL_MEDIA", "POSTAGEM", "POST", "INSTAGRAM", "LINKEDIN", "REDE SOCIAL"]):
-                    category = "SOCIAL_MEDIA_POST"
+                if any(w in raw_upper for w in ["PROGRAMAÇÃO", "PROGRAMACAO", "CÓDIGO", "CODIGO", "SCRIPT", "SMB", "LINUX", "WINDOWS", "POWERSHELL", "SERVIDOR"]):
+                    category = "CODING"
+                elif any(w in raw_upper for w in ["SOCIAL_MEDIA", "POSTAGEM", "POST", "INSTAGRAM", "LINKEDIN", "REDE SOCIAL"]):
+                    # Só confirma SOCIAL_MEDIA_POST se o prompt do usuário contiver termos de rede social
+                    social_kw = r"\b(post\w*|publica\w*|an[uú]nc\w*|campanha\w*|legenda\w*|feed|stories|instagram|linkedin|facebook|twitter|tiktok)\b"
+                    if re.search(social_kw, user_prompt.lower()):
+                        category = "SOCIAL_MEDIA_POST"
+                    else:
+                        category = "CODING" if any(k in user_prompt.lower() for k in ["smb", "linux", "servidor", "windows", "script"]) else "FACTUAL_GENERAL"
                 elif any(w in raw_upper for w in ["SAUDAÇÃO", "SAUDACAO", "CUMPRIMENTO", "CONVERSA INFORMAL", "CASUAL"]):
                     category = "CASUAL_CHAT"
-                elif any(w in raw_upper for w in ["PROGRAMAÇÃO", "PROGRAMACAO", "CÓDIGO", "CODIGO", "SCRIPT"]):
-                    category = "CODING"
                 elif any(w in raw_upper for w in ["CLIMA", "TEMPO", "PREVISÃO", "METEOROLOGIA"]):
                     category = "WEATHER_INFO"
                 elif any(w in raw_upper for w in ["NOTÍCIA", "NOTICIA", "ELEIÇÃO", "ELEICAO", "COTAÇÃO"]):
                     category = "REALTIME_SEARCH"
 
+        # Guardrail anti-desvio falso para SOCIAL_MEDIA_POST
+        if category == "SOCIAL_MEDIA_POST":
+            social_guard = r"\b(post\w*|postg\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|legenda\w*|carrossel\w*|copy\w*|story|stories|feed|instagram|insta|linkedin|facebook|twitter|tiktok|hashtag)\b"
+            if not re.search(social_guard, user_prompt.lower()):
+                tech_guard = r"\b(smb|samba|nfs|servidor|linux|windows|powershell|bash|terminal|código|script|python|sql|docker|comando)\b"
+                category = "CODING" if re.search(tech_guard, user_prompt.lower()) else "FACTUAL_GENERAL"
+                print(f"[Guardrail Classificador] Falso positivo de SOCIAL_MEDIA_POST sem termos sociais. Ajustado para: {category}")
+
         print(f"[Debug Classificador LLM] Retorno bruto: '{raw_classification}' -> Rota final: {category} | LLM Follow-up: {llm_followup_detected} | Reescrita: {rewritten_prompt}")
     else:
         # Se todos os classificadores falharam
-        if is_followup and last_category:
+        if is_followup and last_category and last_category != "SOCIAL_MEDIA_POST":
             category = last_category
             routing_method = "llm_error_context_fallback"
             print(f"[Aviso] Classificador LLM indisponível. Usando fallback contextual da categoria anterior: {category}")
         else:
-            category = "FACTUAL_GENERAL"
+            category = "CODING" if any(k in user_prompt.lower() for k in ["smb", "linux", "servidor", "windows", "powershell", "samba"]) else "FACTUAL_GENERAL"
             routing_method = "llm_error_default_fallback"
-            print(f"[Aviso] Classificador LLM indisponível. Usando fallback padrão: FACTUAL_GENERAL.")
+            print(f"[Aviso] Classificador LLM indisponível. Usando fallback padrão: {category}.")
 
     # Guardrail adicional: Se o modelo identificou follow-up, mas a categoria anterior era FACTUAL_GENERAL e o usuário não pediu código/análise de arquivo
     if (is_followup or llm_followup_detected) and last_category == "FACTUAL_GENERAL" and category == "DOCUMENT_RAG":
@@ -400,11 +523,118 @@ async def classify_intent(
             print(f"[Guardrail Classificador] Bloqueando desvio para DOCUMENT_RAG em continuidade de FACTUAL_GENERAL.")
             category = "FACTUAL_GENERAL"
 
-    # Proteção de Continuação Contextual: Se for instrução de acompanhamento sem menção a código, não enviar para CODING
+    # Proteção de Continuação Contextual: Se for instrução de acompanhamento sem menção a código ou infra, não enviar para CODING
     if category == "CODING" and (is_followup or llm_followup_detected):
-        coding_explicit = re.search(r"(código|script|programa|python|sql|java|regex|função|function|dev|docker)\b", user_prompt.lower())
+        coding_explicit = re.search(r"(código|script|programa|python|sql|java|regex|função|function|dev|docker|smb|samba|nfs|linux|windows|powershell|servidor|terminal|bash|ssh|systemctl)\b", user_prompt.lower())
         if not coding_explicit:
-            category = last_category if (last_category and last_category != "CODING") else "FACTUAL_GENERAL"
+            category = last_category if (last_category and last_category not in ["CODING", "SOCIAL_MEDIA_POST", "IMAGE_GENERATION", "IMAGE_EDIT"]) else "FACTUAL_GENERAL"
             print(f"[Orquestrador Contexto] Instrução '{user_prompt}' é continuação de conversa/dados, não programação. Rota ajustada para: {category}.")
 
     return category, routing_method, raw_classifier_output, rewritten_prompt
+
+
+# =====================================================================
+# Roteador / Despachante Unificado com Suporte a Feature Flag & Shadow Mode
+# =====================================================================
+async def classify_intent(
+    user_prompt: str,
+    messages: list,
+    last_user_msg: dict,
+    conversation_id: str = None,
+    user_id: str = None
+) -> Tuple[str, str, Optional[str], Optional[str]]:
+    """
+    Despachante Dinâmico de Roteamento de Intenções:
+    - V2_SEMANTIC_VECTOR: Roteamento Semântico Vetorial + JSON Schema Rígido.
+    - SHADOW_MODE: Motor V2 como padrão de resposta oficial e V1 em paralelo para comparação em log.
+    - V1_LEGACY: Motor Legado (Dicionário Universal + Fast-pass Regex + LLM Livre).
+    """
+    try:
+        from admin_config_service import get_classifier_engine
+        engine = get_classifier_engine()
+    except Exception:
+        engine = "SHADOW_MODE"
+
+    if engine == "V1_LEGACY":
+        print(f"[Orquestrador Roteamento] Executando Motor V1 (Legado).")
+        return await classify_intent_v1(
+            user_prompt=user_prompt,
+            messages=messages,
+            last_user_msg=last_user_msg,
+            conversation_id=conversation_id,
+            user_id=user_id
+        )
+
+    elif engine == "V2_SEMANTIC_VECTOR":
+        print(f"[Orquestrador Roteamento] Executando Motor V2 (Semântico Vetorial & JSON Schema).")
+        try:
+            from semantic_router_service import classify_intent_v2
+            return await classify_intent_v2(
+                user_prompt=user_prompt,
+                messages=messages,
+                last_user_msg=last_user_msg,
+                conversation_id=conversation_id,
+                user_id=user_id
+            )
+        except Exception as v2_err:
+            print(f"[Aviso Roteador V2] Falha no motor V2: {v2_err}. Recorrendo ao motor V1...")
+            return await classify_intent_v1(
+                user_prompt=user_prompt,
+                messages=messages,
+                last_user_msg=last_user_msg,
+                conversation_id=conversation_id,
+                user_id=user_id
+            )
+
+    else:
+        # Modo Padrão: SHADOW_MODE (Prioridade V2 como resposta oficial, V1 como comparador)
+        print(f"[Orquestrador Roteamento] Modo Sombra Ativo (V2 Oficial de Resposta | V1 para Comparação).")
+        from semantic_router_service import classify_intent_v2
+
+        # 1. Rota oficial prioritária (V2)
+        try:
+            v2_cat, v2_method, v2_raw, v2_rew = await classify_intent_v2(
+                user_prompt=user_prompt,
+                messages=messages,
+                last_user_msg=last_user_msg,
+                conversation_id=conversation_id,
+                user_id=user_id
+            )
+        except Exception as v2_err:
+            print(f"[Aviso Roteador V2 Shadow] Falha no motor V2: {v2_err}. Usando V1 como contingência...")
+            return await classify_intent_v1(
+                user_prompt=user_prompt,
+                messages=messages,
+                last_user_msg=last_user_msg,
+                conversation_id=conversation_id,
+                user_id=user_id
+            )
+
+        # 2. Executa V1 em segundo plano assíncrono para logging comparativo de precisão (Zero Latência no V2)
+        async def _run_v1_shadow_background():
+            try:
+                v1_cat, v1_method, _, _ = await asyncio.wait_for(
+                    classify_intent_v1(
+                        user_prompt=user_prompt,
+                        messages=messages,
+                        last_user_msg=last_user_msg,
+                        conversation_id=conversation_id,
+                        user_id=user_id
+                    ),
+                    timeout=5.0
+                )
+                match_status = (v2_cat == v1_cat)
+                print(f"[SHADOW MODE COMPARISON] V2 (Oficial): {v2_cat} ({v2_method}) | V1 (Comparativo): {v1_cat} ({v1_method}) | Concordância: {match_status}")
+            except asyncio.TimeoutError:
+                print(f"[SHADOW MODE COMPARISON] V2 (Oficial): {v2_cat} ({v2_method}) | V1 (Comparativo): TIMEOUT (>5s)")
+            except Exception as v1_err:
+                print(f"[Aviso Shadow Mode] Erro ao executar motor V1 de comparação: {v1_err}")
+
+        try:
+            asyncio.create_task(_run_v1_shadow_background())
+        except Exception:
+            pass
+
+        # Retorna imediatamente o resultado oficial do motor V2
+        return v2_cat, v2_method, v2_raw, v2_rew
+

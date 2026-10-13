@@ -19,13 +19,65 @@ PLATFORM_OPENAI_SIZES = {
     "MULTIPLATAFORMA": "1024x1024"
 }
 
+async def generate_smart_caption(
+    user_prompt: str,
+    platform_key: str,
+    briefing: Dict[str, Any],
+    spec: Dict[str, Any],
+    headline: str,
+    subhead: str = ""
+) -> str:
+    """Gera legenda dinâmica e altamente engajadora baseada no briefing real do post."""
+    from langchain_openai import ChatOpenAI
+    from config import LITELLM_BASE_URL, LITELLM_API_KEY
+    
+    prompt = f"""Você é um copywriter de redes sociais de alta performance.
+Escreva uma legenda completa para uma publicação no {spec['label']}.
+
+DADOS DA PUBLICAÇÃO:
+- TÍTULO/DESTAQUE OBRIGATÓRIO: {headline or 'Conquista'}
+- SUBTÍTULO/COLOCAÇÃO/DETALHE: {subhead or ''}
+- PEDIDO DO USUÁRIO: {user_prompt}
+- DOMÍNIO: {briefing.get('domain', 'Esportes / Conquistas')}
+- TOM: {briefing.get('tone', spec.get('tone', 'Inspirador e comemorativo'))}
+
+DIRETRIZES DA LEGENDA:
+1. Comece com um emoji e um gancho (Hook) forte contendo o título '{headline}'.
+2. Destaque no corpo a conquista, citando o resultado '{subhead}' com entusiasmo autêntico.
+3. Adicione uma chamada para ação (CTA) envolvente para os seguidores comentarem.
+4. Finalize com 5 a 8 hashtags estratégicas relevantes para o tema e plataforma.
+5. NÃO invente nomes de escolas ou marcas que não foram informadas.
+
+Retorne APENAS o texto da legenda formatado, pronto para copiar e colar."""
+
+    try:
+        llm = ChatOpenAI(base_url=LITELLM_BASE_URL, api_key=LITELLM_API_KEY, model="ComboFree_Smart", temperature=0.6, max_tokens=1000)
+        resp = await llm.ainvoke(prompt)
+        text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+        if text and len(text) > 30 and not text.startswith("{"):
+            return text
+    except Exception as e:
+        print(f"[Smart Mode] Erro ao gerar legenda com LLM: {e}")
+
+    sub_line = f"\n🥈 {subhead}" if subhead else ""
+    return (
+        f"🏆 {headline}!\n{sub_line}\n\n"
+        f"Dedicação, treino e foco levam a grandes resultados! Parabéns por essa conquista incrível e inspiradora.\n\n"
+        f"👉 Deixe seu comentário celebrando esse momento!\n\n"
+        f".\n.\n"
+        f"#{platform_key.lower()} #conquista #superacao #esporte"
+    )
+
+
 async def execute_smart_mode(
     user_prompt: str,
     platform_key: str,
     briefing: Dict[str, Any],
     source_img_public_urls: List[str],
     spec: Dict[str, Any],
-    tools_called: List[Dict[str, Any]]
+    tools_called: List[Dict[str, Any]],
+    exact_headline: Optional[str] = None,
+    exact_subhead: Optional[str] = None
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Motor SOCIAL_MEDIA_SMART (OpenAI GPT-Image Multimodal Edition):
@@ -39,7 +91,19 @@ async def execute_smart_mode(
     # Extração de dados estratégicos do briefing
     domain = briefing.get("domain", "Geral")
     tone = briefing.get("tone", "Profissional e Esportivo")
-    headline = briefing.get("must_include_text") or briefing.get("topic_summary", "")
+    
+    headline = exact_headline or briefing.get("must_include_text") or ""
+    subhead = exact_subhead or briefing.get("subhead_text") or ""
+    
+    # Se ainda estiver vazio ou for uma instrução de comando ("Refaça...", "Crie..."), limpa
+    if not headline or any(cmd in headline.lower() for cmd in ["refaça", "crie um", "fazer um", "post acima"]):
+        quotes = re.findall(r'["“"\'«]([^"”"\'»\n]{2,80})["”"\'»]', user_prompt)
+        if quotes:
+            headline = quotes[0]
+            subhead = quotes[1] if len(quotes) > 1 else subhead
+        else:
+            headline = briefing.get("topic_summary", "")[:40]
+
     palette = briefing.get("palette") or ["#0055A5", "#00A859"]
     palette_str = ", ".join(palette) if isinstance(palette, list) else str(palette)
     visual_elements = ", ".join(briefing.get("visual_elements") or [])
@@ -48,11 +112,13 @@ async def execute_smart_mode(
     prompt_lines = [
         f"Create an eye-catching, professional {spec['label']} social media poster graphic (aspect ratio {spec['aspect_ratio']}).",
         f"Theme / Domain: {domain}. Visual Tone: {tone}.",
-        f"Design Instructions from user: {user_prompt}.",
+        f"Design Instructions from user: {user_prompt[:250]}.",
         f"Background style & Colors: Incorporate {palette_str} background gradients, modern geometric curves and textures.",
     ]
     if headline:
-        prompt_lines.append(f"Graphic Typography & Text Overlay: Prominently feature and render clearly the text: '{headline}'.")
+        prompt_lines.append(f"Graphic Typography & Main Title Overlay: Prominently feature and render clearly the text: '{headline}'.")
+    if subhead:
+        prompt_lines.append(f"Graphic Typography Subtitle (at bottom): Feature cleanly and visibly: '{subhead}'.")
     if visual_elements:
         prompt_lines.append(f"Visual details: Incorporate {visual_elements}.")
     
@@ -288,15 +354,14 @@ async def execute_smart_mode(
         "image_url": public_url
     })
 
-    # Legenda estratégica do post
-    headline_clean = headline or "Circuito Escolar 2026"
-    caption_text = (
-        f"🏆 {headline_clean}!\n\n"
-        f"A energia, dedicação e talento dos nossos atletas em quadra e na piscina fazem história! "
-        f"Parabéns a todos os alunos, técnicos e apoiadores envolvidos nessa jornada inspiradora.\n\n"
-        f"👉 Acompanhe a cobertura completa e celebre o esporte conosco!\n\n"
-        f".\n.\n"
-        f"#{platform_key.lower()} #esporte #circuitoescolar #colegioarbos #natacao #handebol #esportesempre"
+    # Legenda estratégica e dinâmica do post
+    caption_text = await generate_smart_caption(
+        user_prompt=user_prompt,
+        platform_key=platform_key,
+        briefing=briefing,
+        spec=spec,
+        headline=headline,
+        subhead=subhead
     )
 
     out = []

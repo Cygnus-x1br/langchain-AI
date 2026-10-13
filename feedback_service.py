@@ -107,6 +107,7 @@ def sync_feedbacks_from_mongodb() -> Dict[str, Any]:
             tag = fb.get("tag", "")
             msg_id = str(msg.get("messageId") or msg.get("_id"))
             parent_id = msg.get("parentMessageId")
+            user_id = str(msg.get("user") or "")
 
             # Conteúdo da resposta
             asst_text = ""
@@ -120,6 +121,8 @@ def sync_feedbacks_from_mongodb() -> Dict[str, Any]:
             if parent_id:
                 parent_msg = messages_col.find_one({"messageId": parent_id})
                 if parent_msg:
+                    if not user_id and parent_msg.get("user"):
+                        user_id = str(parent_msg.get("user"))
                     user_prompt = parent_msg.get("text", "")
                     if not user_prompt and isinstance(parent_msg.get("content"), list):
                         user_prompt = " ".join([c.get("text", "") for c in parent_msg.get("content") if isinstance(c, dict)])
@@ -134,7 +137,19 @@ def sync_feedbacks_from_mongodb() -> Dict[str, Any]:
                 # 1. Invalida do cache
                 invalidate_cache_for_prompt(user_prompt)
 
-                # 2. Registra na memória de erros (Anti-Exemplo)
+                # 2. Purga referências corrompidas na memória do usuário (Léxico aprendido e Memória Episódica)
+                if user_id:
+                    try:
+                        from user_lexicon_service import remove_user_learned_patterns_for_prompt
+                        from episodic_memory_service import remove_episodic_memories_for_prompt
+                        purged_lex = remove_user_learned_patterns_for_prompt(user_id, user_prompt)
+                        purged_epi = remove_episodic_memories_for_prompt(user_id, user_prompt)
+                        if purged_lex > 0 or purged_epi > 0:
+                            print(f"[Feedback Purge] Usuário '{user_id}': expurgados {purged_lex} padrões léxicos e {purged_epi} memórias episódicas.")
+                    except Exception as purge_err:
+                        print(f"[Aviso Feedback Purge Memória]: {purge_err}")
+
+                # 3. Registra na memória de erros (Anti-Exemplo)
                 point_id = hashlib.md5(f"down_{msg_id}".encode()).hexdigest()
                 vector = embeddings.embed_query(user_prompt)
                 qc.upsert(
@@ -145,6 +160,7 @@ def sync_feedbacks_from_mongodb() -> Dict[str, Any]:
                             vector=vector,
                             payload={
                                 "message_id": msg_id,
+                                "user_id": user_id,
                                 "rating": "thumbsDown",
                                 "tag": tag,
                                 "prompt": user_prompt,
@@ -235,3 +251,61 @@ async def check_negative_feedback_guardrail(user_prompt: str) -> Optional[str]:
         print(f"[Feedback Service] Erro ao consultar guardrail de feedback negativo: {e}")
 
     return None
+
+
+def process_immediate_negative_feedback(
+    user_id: str,
+    prompt: str,
+    bad_response_snippet: str = "",
+    tag: str = ""
+) -> Dict[str, Any]:
+    """
+    Executa a purga imediata de memória e cache após um polegar para baixo (thumbsDown)
+    sem depender exclusivamente do ciclo de sincronização em lote.
+    """
+    invalidate_cache_for_prompt(prompt)
+    purged_lex = 0
+    purged_epi = 0
+
+    if user_id:
+        try:
+            from user_lexicon_service import remove_user_learned_patterns_for_prompt
+            from episodic_memory_service import remove_episodic_memories_for_prompt
+            purged_lex = remove_user_learned_patterns_for_prompt(user_id, prompt)
+            purged_epi = remove_episodic_memories_for_prompt(user_id, prompt)
+        except Exception as e:
+            print(f"[Aviso Immediate Feedback Purge]: {e}")
+
+    try:
+        ensure_feedback_collection()
+        qc = get_qdrant_client()
+        point_id = hashlib.md5(f"down_imm_{user_id}_{prompt[:40]}".encode()).hexdigest()
+        vector = embeddings.embed_query(prompt)
+        qc.upsert(
+            collection_name=FEEDBACK_COLLECTION,
+            points=[
+                models.PointStruct(
+                    id=point_id,
+                    vector=vector,
+                    payload={
+                        "user_id": user_id,
+                        "rating": "thumbsDown",
+                        "tag": tag,
+                        "prompt": prompt,
+                        "bad_response_snippet": bad_response_snippet[:600],
+                        "timestamp": int(time.time()),
+                        "instruction": "Esta resposta anterior recebeu avaliação negativa (rejeitada pelo usuário). Não repita os erros ou alucinações nela presentes."
+                    }
+                )
+            ]
+        )
+    except Exception as q_err:
+        print(f"[Aviso Gravação Anti-Exemplo Qdrant]: {q_err}")
+
+    return {
+        "status": "success",
+        "purged_lexicons": purged_lex,
+        "purged_episodic_memories": purged_epi,
+        "cache_invalidated": True
+    }
+

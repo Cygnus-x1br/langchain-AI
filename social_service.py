@@ -1,3 +1,4 @@
+import os
 import re
 import json
 import time
@@ -118,11 +119,42 @@ def _extract_json(raw: str) -> Optional[Dict[str, Any]]:
         pass
     start, end = clean.find("{"), clean.rfind("}")
     if start != -1 and end > start:
+        snippet = clean[start:end + 1]
         try:
-            return json.loads(clean[start:end + 1])
+            return json.loads(snippet)
         except Exception:
-            return None
+            # Tenta reparar JSON com hashtags ou aspas não fechadas
+            repaired = re.sub(r',\s*([\]}])', r'\1', snippet)
+            repaired = re.sub(r'\[\s*#([^",\]\s]+)', r'["#\1', repaired)
+            repaired = re.sub(r',\s*#([^",\]\s]+)', r', "#\1"', repaired)
+            try:
+                return json.loads(repaired)
+            except Exception:
+                pass
+            # Fallback cirúrgico por regex para campos essenciais do post
+            fields = {}
+            for k in ["hook", "body_copy", "call_to_action", "objective", "image_prompt_en", "visual_style", "strategic_tip"]:
+                m = re.search(rf'"{k}"\s*:\s*"((?:\\.|[^"\\])*)"', snippet)
+                if m:
+                    fields[k] = m.group(1).encode().decode('unicode_escape', 'ignore')
+            if "hashtags" not in fields:
+                ht = re.findall(r'#\w+', snippet)
+                if ht:
+                    fields["hashtags"] = ht
+            if fields.get("body_copy") or fields.get("hook"):
+                return fields
     return None
+
+
+from phrase_extractor_guardrail import extract_user_phrases_guardrail
+
+
+async def extract_user_requested_phrases(user_prompt: str, messages: list) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Encaminha para o guardrail determinístico de frases (phrase_extractor_guardrail).
+    Suporta aspas, tópicos, triggers 'inclua a frase...', histórico e fallback LLM.
+    """
+    return await extract_user_phrases_guardrail(user_prompt, messages)
 
 
 async def _call_llm_chain(
@@ -358,7 +390,9 @@ async def run_research_agent(
     platform_key: str,
     image_description: Optional[str],
     image_available: bool,
-    tools_called: List[Dict[str, Any]]
+    tools_called: List[Dict[str, Any]],
+    exact_headline: Optional[str] = None,
+    exact_subhead: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Agente 1: planeja, pesquisa na web (quando necessário), analisa a imagem anexa e produz o BRIEFING
@@ -412,6 +446,11 @@ async def run_research_agent(
         f"DADOS DA PESQUISA WEB:\n{web_text or 'Nenhuma pesquisa realizada ou sem resultados.'}"
     )
 
+    if exact_headline:
+        user_content += f"\n\nTEXTOS/FRASES OBRIGATÓRIAS SOLICITADAS PELO USUÁRIO (NÃO ALTERE, NÃO INVENTE OUTRAS):\n- Título Obrigatório: {exact_headline}"
+        if exact_subhead:
+            user_content += f"\n- Subtítulo/Texto 2 Obrigatório: {exact_subhead}"
+
     t0 = time.time()
     try:
         from admin_config_service import get_prompt_text
@@ -452,6 +491,16 @@ async def run_research_agent(
         }
         used_model = used_model or "fallback"
 
+    if exact_headline:
+        briefing["must_include_text"] = exact_headline
+        briefing["subhead_text"] = exact_subhead or ""
+        if "verified_facts" not in briefing or not isinstance(briefing["verified_facts"], list):
+            briefing["verified_facts"] = []
+        if exact_headline not in briefing["verified_facts"]:
+            briefing["verified_facts"].insert(0, f"Frase/Título obrigatório: {exact_headline}")
+        if exact_subhead and exact_subhead not in briefing["verified_facts"]:
+            briefing["verified_facts"].insert(1, f"Subtítulo obrigatório: {exact_subhead}")
+
     briefing["sources"] = sources
     briefing["web_research_used"] = bool(web_text)
     tools_called.append({
@@ -471,7 +520,9 @@ async def run_creator_agent(
     user_prompt: str,
     platform_key: str,
     briefing: Dict[str, Any],
-    tools_called: List[Dict[str, Any]]
+    tools_called: List[Dict[str, Any]],
+    exact_headline: Optional[str] = None,
+    exact_subhead: Optional[str] = None
 ) -> Dict[str, Any]:
     """Agente 2: escreve a copy e o prompt visual executando fielmente o briefing."""
     spec = PLATFORM_SPECS.get(platform_key, PLATFORM_SPECS["MULTIPLATAFORMA"])
@@ -481,8 +532,18 @@ async def run_creator_agent(
         f"PLATAFORMA: {spec['label']} | {spec['dimensions']} | Hashtags: {spec['hashtags_count']}\n\n"
         f"PEDIDO ORIGINAL DO USUÁRIO:\n{user_prompt}\n\n"
         f"BRIEFING DO AGENTE DE PESQUISA (siga à risca):\n{json.dumps(briefing_for_creator, ensure_ascii=False, indent=2)}\n\n"
-        f"Gere o JSON do post:"
     )
+
+    if exact_headline:
+        user_content += (
+            f"ATENÇÃO - FRASES OBRIGATÓRIAS ESPECIFICADAS PELO USUÁRIO:\n"
+            f"- TÍTULO/HOOK: '{exact_headline}'\n"
+        )
+        if exact_subhead:
+            user_content += f"- SUBTÍTULO: '{exact_subhead}'\n"
+        user_content += "Você DEVE usar essa frase no campo 'hook' e não substituí-la por títulos genéricos!\n\n"
+
+    user_content += "Gere o JSON do post:"
 
     t0 = time.time()
     try:
@@ -510,11 +571,16 @@ async def run_creator_agent(
     if not isinstance(post, dict):
         print("[Social Creator] Falha ao obter JSON do criador. Usando texto bruto/contingência.")
         key_msgs = briefing.get("key_messages") or []
+        clean_fallback_body = text or "\n".join(key_msgs) or user_prompt
+        # Remove eventuais chaves de JSON bruto vazadas
+        clean_fallback_body = re.sub(r'\{\s*"[a-zA-Z_]+".*?\}', '', clean_fallback_body, flags=re.DOTALL).strip()
+        if not clean_fallback_body:
+            clean_fallback_body = "Com orgulho celebramos essa grande conquista e dedicação dos nossos atletas!"
         post = {
             "platform": spec["label"],
             "objective": briefing.get("objective", "Engajamento"),
             "hook": briefing.get("must_include_text") or (key_msgs[0] if key_msgs else "Destaque do dia"),
-            "body_copy": (text or "\n".join(key_msgs) or user_prompt)[:800],
+            "body_copy": clean_fallback_body[:800],
             "call_to_action": "Comente e compartilhe!",
             "hashtags": briefing.get("hashtags_seed", [])[:6],
             "image_prompt_en": briefing.get("image_prompt_en", ""),
@@ -522,6 +588,9 @@ async def run_creator_agent(
             "strategic_tip": "Interaja com os primeiros comentários nos primeiros 30 minutos."
         }
         used_model = used_model or "fallback"
+
+    if exact_headline and isinstance(post, dict):
+        post["hook"] = exact_headline
 
     tools_called.append({
         "action": "social_creator_post",
@@ -702,8 +771,6 @@ async def execute_social_post_flow(
     if len(user_prompt.split()) < 30 and not source_img_public_url:
         from langchain_openai import ChatOpenAI
         from config import LITELLM_BASE_URL, LITELLM_API_KEY
-        import re
-        import json
         
         gr_prompt = f"""Você é um auditor de comandos de marketing.
 Avalie o seguinte pedido do usuário para criar um post de rede social:
@@ -749,13 +816,30 @@ Responda SOMENTE em JSON válido:
             "duration_seconds": round(time.time() - t0, 2)
         })
 
+    # Extração prioritária determinística de frases solicitadas pelo usuário (aspas, tópicos, triggers 'inclua a frase...')
+    exact_headline, exact_subhead = await extract_user_phrases_guardrail(user_prompt, messages)
+    if exact_headline:
+        tools_called.append({
+            "action": "social_exact_phrases_guardrail",
+            "headline": exact_headline,
+            "subhead": exact_subhead,
+            "status": "extracted"
+        })
+        print(f"[Social Flow] Frases exatas detectadas: Headline='{exact_headline}', Subhead='{exact_subhead}'")
+
     briefing = await run_research_agent(
         user_prompt=user_prompt,
         platform_key=platform_key,
         image_description=image_description,
         image_available=bool(source_img_public_url),
-        tools_called=tools_called
+        tools_called=tools_called,
+        exact_headline=exact_headline,
+        exact_subhead=exact_subhead
     )
+
+    if exact_headline:
+        briefing["must_include_text"] = exact_headline
+        briefing["subhead_text"] = exact_subhead or ""
 
     if mode == "SMART":
         from social_mode_smart import execute_smart_mode
@@ -765,14 +849,23 @@ Responda SOMENTE em JSON válido:
             briefing=briefing,
             source_img_public_urls=source_img_public_urls,
             spec=spec,
-            tools_called=tools_called
+            tools_called=tools_called,
+            exact_headline=exact_headline,
+            exact_subhead=exact_subhead
         )
     elif mode == "DESIGN":
         from social_mode_design import execute_design_mode
         return await execute_design_mode(user_prompt, platform_key, briefing, source_img_public_url, spec, tools_called)
 
     # 3. AGENTE 2: criador (Modo FAST Default)
-    post = await run_creator_agent(user_prompt, platform_key, briefing, tools_called)
+    post = await run_creator_agent(
+        user_prompt=user_prompt,
+        platform_key=platform_key,
+        briefing=briefing,
+        tools_called=tools_called,
+        exact_headline=exact_headline,
+        exact_subhead=exact_subhead
+    )
 
     # 4. Imagem final
     public_img_url, img_model, img_provider, img_duration = None, None, None, 0.0
@@ -803,23 +896,26 @@ Responda SOMENTE em JSON válido:
 
     # 4.5. Fase 2: Composição Visual com Pillow (adiciona textos na imagem)
     if public_img_url:
-        import os
         from social_image_composer import compose_image
         
-        filename = public_img_url.split("/")[-1]
+        filename = public_img_url.split("/")[-1].split("?")[0]
         local_input_path = os.path.join(IMAGE_STORAGE_DIR, filename)
         composed_filename = f"composed_{filename}"
         local_output_path = os.path.join(IMAGE_STORAGE_DIR, composed_filename)
         
-        # Limpa emojis e extrai título principal do hook
-        headline_raw = post.get("hook", "").split("\n")[0].strip()
-        headline = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', headline_raw).strip()
-        
-        subhead_raw = post.get("call_to_action", "").split("\n")[0].strip()
-        subhead = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', subhead_raw).strip()
+        # Prioridade máxima para as frases solicitadas pelo usuário entre aspas
+        if exact_headline:
+            headline = exact_headline
+            subhead = exact_subhead or ""
+        else:
+            # Limpa emojis e extrai título principal do hook
+            headline_raw = post.get("hook", "").split("\n")[0].strip()
+            headline = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', headline_raw).strip()
+            subhead_raw = post.get("call_to_action", "").split("\n")[0].strip()
+            subhead = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', subhead_raw).strip()
         
         t0_comp = time.time()
-        print(f"[Social Flow] Iniciando composição visual em {local_input_path}...")
+        print(f"[Social Flow] Iniciando composição visual em {local_input_path} (Headline: '{headline}', Subhead: '{subhead}')...")
         success_comp = compose_image(local_input_path, local_output_path, headline, subhead, spec)
         
         if success_comp:

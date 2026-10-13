@@ -37,8 +37,16 @@ langchain-orchestrator/
 ├── agent_service.py          # Ferramentas em tempo real (OpenWeatherMap, SearXNG, Tavily) e auditor de fatos
 ├── rag_service.py            # Base corporativa e memória temporária com TTL no Qdrant
 ├── cache_service.py          # Cache híbrido de alta velocidade (SQLite Exato + Qdrant Semântico)
-├── canonical_api_service.py# APIs Canônicas Brasileiras (BrasilAPI: CEP, CNPJ, FIPE, IBGE)
-├── video_service.py         # Criação autônoma de vídeos curtos verticais (Reels/Shorts/TikTok) com OpenAI TTS + FFmpeg
+├── canonical_api_service.py  # APIs Canônicas Brasileiras (BrasilAPI: CEP, CNPJ, FIPE, IBGE)
+├── video_service.py           # Criação autônoma de vídeos curtos verticais (Reels/Shorts/TikTok) com OpenAI TTS + FFmpeg
+├── mcp_filesystem_service.py # MCP Filesystem: Sandbox seguro de manipulação de arquivos (/app/workspace)
+├── mcp_fetch_service.py      # MCP Fetch: Extração de páginas web, HTML para Markdown e proteção SSRF
+├── mcp_git_service.py        # MCP Git: Controle de versão, commits, status, log e diffs seguros no workspace
+├── mcp_brave_search_service.py # MCP Brave Search: Busca web independente e resiliente via Brave Search API
+├── mcp_database_service.py   # MCP Database: Consultas SQL seguras em SQLite, DuckDB e PostgreSQL
+├── mcp_code_runner_service.py # MCP Code Runner: Execução segura de scripts Python e Bash em sandbox
+├── domain_skills_service.py  # Habilidades Especialistas: Social Media, DevOps, Engenharia de Software
+├── skills_api.py             # Router REST e Manifesto OpenAPI (/skills/openapi.json) para o LibreChat
 ├── main.py                   # FastAPI: endpoints REST, pipeline unificado e streaming SSE
 ├── docker-compose.yml        # Orquestração do Orchestrator e Qdrant
 ├── Dockerfile                # Imagem de produção Python 3.11-slim
@@ -67,6 +75,10 @@ O servidor expõe na porta `8000` uma API REST compatível com OpenAI e rotas de
 | **`POST`** | `/v1/social/create-post` | Endpoint dedicado de criação de posts e leads (JSON estruturado) | **n8n** / **Make** / Automações |
 | **`POST`** | `/v1/social/completions` | Alias OpenAI-compatible para o Agente de Redes Sociais | Clientes OpenAI / LibreChat |
 | **`POST`** | `/v1/video/short` | Geração completa de vídeos curtos verticais (Reels/Shorts/TikTok) com roteiro, narração e renderização | **LibreChat** / Automações / Marketing |
+| **`POST`** | `/v1/chat/completions` *(MCP_FILESYSTEM)* | Manipulação segura de arquivos e pastas no sandbox do workspace | **LibreChat** / Agentes |
+| **`POST`** | `/v1/chat/completions` *(MCP_FETCH)* | Extração de páginas web e conversão segura para Markdown limpo | **LibreChat** / Agentes |
+| **`POST`** | `/v1/chat/completions` *(MCP_GIT)* | Controle de versão Git seguro no workspace (status, log, diff, commit, branch) | **LibreChat** / IDEs |
+| **`POST`** | `/v1/chat/completions` *(MCP_BRAVE_SEARCH)* | Busca web independente em tempo real via Brave Search API | **LibreChat** / Agentes |
 | **`POST`** | `/v1/coding/fast` | Sub-rota direta para o nível **FAST** de código | Scripts rápidos e edições diretas |
 | **`POST`** | `/v1/coding/exec` | Sub-rota direta para o nível **EXEC** (Intermediário / Execução) | Implementação e refatoração |
 | **`POST`** | `/v1/coding/plan` | Sub-rota direta para o nível **PLAN** (Avançado / Arquitetura) | Planejamento e raciocínio profundo |
@@ -405,7 +417,67 @@ Para assegurar máxima robustez em conversas contínuas e eliminar respostas err
 
 ---
 
-## 14. Hub de APIs Canônicas Oficiais & Contextualização Territorial Geográfica
+## 13. Ecossistema Model Context Protocol (MCP) Integrado
+
+O orquestrador implementa serviços modulares alinhados à especificação **Model Context Protocol (MCP)**, expondo ferramentas nativas tanto via **LangChain Tools (`@tool`)** quanto em **Schemas OpenAI Function Calling**:
+
+### 13.1. MCP Filesystem (`mcp_filesystem_service.py`)
+* **Objetivo:** Manipulação segura e estritamente confinada de arquivos e pastas dentro de `WORKSPACE_PATH` (`/app/workspace`).
+* **Ferramentas Expostas:** `mcp_read_file`, `mcp_write_file`, `mcp_append_file`, `mcp_list_directory`, `mcp_create_directory`, `mcp_delete_file`, `mcp_search_files`, `mcp_get_file_info`.
+* **Segurança Zero-Trust:** Resolução canônica de caminho (`Path.resolve()`), verificação estrita `relative_to()` impedindo qualquer tentativa de Path Traversal (`../`), bloqueio de deleção de raiz e limite de leitura (max 5 MB).
+
+### 13.2. MCP Fetch (`mcp_fetch_service.py`)
+* **Objetivo:** Extração, raspagem e conversão de páginas web e documentos públicos em Markdown estruturado.
+* **Ferramentas Expostas:** `mcp_fetch_page`.
+* **Segurança Zero-Trust (Anti-SSRF):** Validação estrita de esquema (apenas `http`/`https`), resolução de DNS com bloqueio preventivo de IPs privados (RFC 1918), loopback (`127.0.0.1`), link-local e metadados de nuvem (`169.254.169.254`). Integração com Crawl4AI para SPAs dinâmicas e fallback com síntese de IA.
+
+### 13.3. MCP Git (`mcp_git_service.py`)
+* **Objetivo:** Controle de versão completo para projetos de desenvolvimento de software dentro do workspace.
+* **Ferramentas Expostas:** `mcp_git_status`, `mcp_git_diff`, `mcp_git_log`, `mcp_git_commit`, `mcp_git_branches`, `mcp_git_init`, `mcp_git_checkout`, `mcp_git_show`.
+* **Segurança:** Execução de subprocesso segura sem `shell=True`, confinamento estrito no workspace, limite de tamanho de diff e suporte a commit semântico automático por linguagem natural.
+
+### 13.4. MCP Brave Search (`mcp_brave_search_service.py`)
+* **Objetivo:** Camada de busca web independente através do índice da Brave Search API.
+* **Ferramentas Expostas:** `mcp_brave_web_search`.
+* **Resiliência e Redundância:** Atua como terceira camada de busca web independente (SearXNG ➔ Tavily ➔ Brave Search), contornando bloqueios do Google/Bing e rate limits de terceiros.
+
+### 13.5. MCP Database (`mcp_database_service.py`)
+* **Objetivo:** Consulta e gerenciamento de bancos de dados relacionais e analíticos (SQLite, DuckDB, PostgreSQL, MongoDB).
+* **Ferramentas Expostas:** `mcp_db_list_tables`, `mcp_db_describe_table`, `mcp_db_query`, `mcp_db_execute`.
+* **Segurança Zero-Trust:** Modo somente-leitura por padrão (`read_only=True`), sanitização contra injeção SQL em metadados, resolução canônica de arquivos restrita a `/app/workspace` e paginação com teto rígido (máx. 200 registros por query).
+
+### 13.6. MCP Code Runner (`mcp_code_runner_service.py`)
+* **Objetivo:** Execução controlada e confinada de snippets de código Python 3, rotinas Bash e scripts existentes no workspace.
+* **Ferramentas Expostas:** `mcp_run_python`, `mcp_run_bash`, `mcp_run_script_file`.
+* **Segurança Zero-Trust:** Expurgamento automático de credenciais de ambiente (chaves de API sensíveis não vazam para o subprocesso), timeout estrito (padrão 15s, máx 60s) com terminação de processos zumbis, bloqueio de comandos destrutivos e teto rígido de buffer de saída (50 KB de stdout/stderr).
+
+---
+
+## 14. Catálogo de Skills Especialistas & Manifesto OpenAPI para o LibreChat
+
+O orquestrador implementa uma camada de **Domain Skills Especialistas** expostas via endpoints REST padronizados (`skills_api.py`) e servidas através de um manifesto limpo pronto para importação no menu de **Actions / Skills do LibreChat**:
+👉 **URL do Manifesto:** `http://10.100.10.31:8000/skills/openapi.json`
+
+### 14.1. Vertical: Social Media & Marketing Digital
+* **`POST /v1/skills/social/campaign-planner`**: Planeja estratégia de campanhas completas com ganchos magnéticos (*hooks*), calendário diário ({1..30} dias) e CTAs orientadas a conversão.
+* **`POST /v1/skills/social/carousel-copywriter`**: Roteiro slide a slide para Instagram/LinkedIn ({4..10} slides) com gancho de capa, corpo didático e direcionamento de arte.
+* **`POST /v1/skills/social/visual-art-director`**: Gera prompts cinemáticos ultra-detalhados para FLUX.1, FLUX.2 e Midjourney com lentes, iluminação de estúdio e color grading.
+* **`POST /v1/skills/social/hashtag-seo`**: Otimizador de hashtags balanceadas (alto, médio volume e cauda longa) e diretrizes de SEO na legenda contra shadowban.
+
+### 14.2. Vertical: DevOps, Infraestrutura de Redes e Hardware
+* **`POST /v1/skills/devops/docker-cicd`**: Gera Dockerfile multi-stage enxuto e seguro (usuário não-root), `docker-compose.yml` e pipeline de CI/CD (GitHub Actions/GitLab CI).
+* **`POST /v1/skills/devops/network-troubleshooter`**: Diagnóstico detalhado de problemas de rede, proxy reverso (Nginx), DNS, portas e firewalls com comandos exatos de diagnóstico (`ss`, `dig`, `tcpdump`, `iptables`).
+* **`POST /v1/skills/devops/hardware-planner`**: Planejamento de capacidade de servidores (*Capacity Planning*): dimensionamento de CPU, RAM, VRAM para IA local, IOPS e storage NVMe com comparação de custos.
+
+### 14.3. Vertical: Programação e Design de Sistemas
+* **`POST /v1/skills/coding/architecture-designer`**: Desenvolve a especificação técnica de arquiteturas escaláveis com diagramas **Mermaid** renderizáveis (sequence, flow, class, erDiagram) e análise de trade-offs.
+* **`POST /v1/skills/coding/security-audit`**: Auditoria estrita de código contra OWASP Top 10, injeções SQL/XSS, vazamento de chaves e código refatorado com segurança defensiva.
+* **`POST /v1/skills/coding/test-suite`**: Geração de suítes de testes unitários automatizados (`pytest`, `unittest`, `jest`) com fixtures, mocks de bancos/APIs e cobertura de cenários de borda.
+* **`POST /v1/skills/coding/refactor-clean-code`**: Refatoração de código legado para Clean Code, princípios SOLID, tipagem estrita (*Type Hints*) e redução de complexidade ciclomática.
+
+---
+
+## 15. Hub de APIs Canônicas Oficiais & Contextualização Territorial Geográfica
 
 Para eliminar alucinações e atender consultas regulatórias, empresariais e locais brasileiras:
 
@@ -419,7 +491,7 @@ Para eliminar alucinações e atender consultas regulatórias, empresariais e lo
 
 ---
 
-## 15. Memória Episódica Persistente de Longo Prazo & Perfis Analíticos de Usuário
+## 16. Memória Episódica Persistente de Longo Prazo & Perfis Analíticos de Usuário
 
 O orquestrador implementa um sistema completo de cognição de longo prazo e perfilamento comportamental ([episodic_memory_service.py](file:///home/jean/langchain-orchestrator/episodic_memory_service.py)):
 
@@ -444,7 +516,7 @@ O orquestrador implementa um sistema completo de cognição de longo prazo e per
 
 ---
 
-## 16. Auditoria e Telemetria
+## 17. Auditoria e Telemetria
 
 Todas as transações atendidas pelo orquestrador são registradas em disco em formato estruturado:
 👉 `logs/requests_YYYY-MM-DD.jsonl`
@@ -460,9 +532,9 @@ Cada linha contém um JSON com:
 
 ---
 
-## 17. Como Executar
+## 18. Como Executar
 
-### 16.1. Pré-requisitos
+### 18.1. Pré-requisitos
 * Docker e Docker Compose instalados no host.
 * Instância do Ollama acessível em `10.100.10.32:11434`.
 * Instância do LiteLLM Proxy acessível em `10.100.10.31:4000`.

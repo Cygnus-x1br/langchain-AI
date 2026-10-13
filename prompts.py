@@ -8,7 +8,7 @@ CLASSIFICATION_PROMPT_TEMPLATE = PromptTemplate.from_template(
 Sua missão é analisar a mensagem atual do usuário, o histórico da conversa e decidir:
 1. Se a mensagem do usuário é dependente/incompleta ou continuação do tema anterior (IS_FOLLOWUP: TRUE ou FALSE).
 2. Se estiver incompleta, reescrever a intenção do usuário incorporando o tema tratado anteriormente (REWRITTEN_PROMPT).
-3. Classificar na rota exata entre as 14 categorias permitidas (CATEGORY).
+3. Classificar na rota exata entre as 20 categorias permitidas (CATEGORY).
 
 CATEGORIAS PERMITIDAS:
 1. DOCUMENT_RAG: EXCLUSIVAMENTE para perguntas que citam explicitamente documentos internos, relatórios enviados, arquivos PDFs, manuais técnicos ou livros carregados pelo usuário (ex: 'segundo o arquivo anexo', 'no manual que enviei', 'no pdf do relatório', 'no livro que subi').
@@ -17,16 +17,22 @@ CATEGORIAS PERMITIDAS:
 2. WEATHER_INFO: Clima, temperatura, previsão do tempo ou chuva.
 3. REALTIME_SEARCH: Perguntas sobre mundo real atual, séries, filmes novos, streaming (Netflix, Prime), tecnologia recente, notícias, cotações de moedas/ações, resultados de jogos, pessoas públicas e busca na internet em geral.
 4. CASUAL_CHAT: Saudações ('oi', 'olá'), agradecimentos ou conversa fiada.
-5. CODING: Pedidos explícitos para escrever, corrigir ou depurar código de programação (Python, JS, SQL, Docker, etc.).
+5. CODING: Pedidos explícitos para escrever, corrigir ou depurar código de programação (Python, JS, SQL, etc.), scripts bash, comandos de terminal/Linux, infraestrutura, Docker, servidores, redes ou configuração de sistemas operacionais (ex: 'Como configurar servidor SMB/NFS', 'configurar nginx', 'comando linux para...', 'script bash').
 6. LOCAL_THINKING: Problemas matemáticos, charadas e raciocínio lógico simples.
 7. HEAVY_REASONING: Matemática acadêmica avançada (cálculo diferencial/integral), física quântica, xadrez técnico.
 8. FACTUAL_GENERAL: Conceitos enciclopédicos consolidados, história geral, dissertações/redações conceituais teóricas (ex: 'Revolução de 1932', 'fotossíntese', 'Império Romano').
 9. VISION: Análise de imagens ou fotos já enviadas.
 10. IMAGE_GENERATION: Pedidos para desenhar/gerar uma nova imagem artística pura.
 11. IMAGE_EDIT: Pedidos para modificar uma imagem existente.
-12. SOCIAL_MEDIA_POST: Postagens estáticas, anúncios, copies e carrosséis para redes sociais (Instagram, LinkedIn, etc.).
+12. SOCIAL_MEDIA_POST: Postagens estáticas, posts simples ('postagem simples com a imagem e título', 'crie um post', etc.), anúncios, copies e carrosséis para redes sociais (Instagram, LinkedIn, etc.).
 13. DATA_EXPORT_CHART: Pedidos para criar tabelas/planilhas com download em Excel/CSV ou gerar gráficos visuais de dados.
 14. SHORT_VIDEO: Pedidos explícitos para criar ou gerar vídeos curtos, reels, shorts, tiktok ou vídeos verticais (ex: 'Crie um vídeo curto sobre...', 'Gere um Reels sobre...', 'Faça um TikTok de...').
+15. MCP_FILESYSTEM: Pedidos explícitos para listar, ler, criar, salvar, buscar ou deletar arquivos e pastas dentro do diretório seguro do workspace (ex: 'liste os arquivos do workspace', 'crie o arquivo teste.py no workspace', 'leia o arquivo notas.txt no workspace'). NUNCA classifique dúvidas sobre servidores de rede (SMB, NFS, Samba), mapeamento de discos no Windows, problemas de rede/disco ou comandos de Linux/SO como MCP_FILESYSTEM (use sempre CODING)!
+16. MCP_FETCH: Acessar ou extrair conteúdo de páginas web via URL explícita informada no prompt (ex: 'Leia https://...', 'Acesse https://... e resuma').
+17. MCP_GIT: Controle de versão Git dentro do workspace seguro (git status, git diff, git log, git commit, git branch, git init, git checkout).
+18. MCP_BRAVE_SEARCH: Busca web explicitamente solicitada através do motor independente Brave Search.
+19. MCP_DATABASE: Consultar bancos de dados (SQLite, DuckDB, PostgreSQL), listar tabelas, descrever schemas de tabelas ou executar queries SQL.
+20. MCP_CODE_RUNNER: Executar snippets de código (Python, Bash, scripts) na sandbox e capturar a saída de execução.
 
 DIRETRIZ DE CONTINUIDADE E ELIPSE (MENSAGENS INCOMPLETAS):
 Se o usuário mandar comandos como:
@@ -44,10 +50,13 @@ HISTÓRICO DA CONVERSA:
 MENSAGEM ATUAL DO USUÁRIO:
 {message}
 
+REGRA CRÍTICA DE FORMATO:
+Sua resposta DEVE começar IMEDIATAMENTE com 'IS_FOLLOWUP:' na primeiríssima linha.
+NUNCA adicione análises prévias, introduções, justificativas ou títulos em Markdown.
 Responda ESTRITAMENTE no seguinte formato de 3 linhas (sem explicações adicionais):
 IS_FOLLOWUP: [TRUE ou FALSE]
 REWRITTEN_PROMPT: [Pergunta expandida e completa do usuário ou a própria mensagem se for completa]
-CATEGORY: [Uma das 14 categorias acima em maiúsculas]"""
+CATEGORY: [Uma das 18 categorias acima em maiúsculas]"""
 )
 
 # ---------------------------------------------------------

@@ -14,17 +14,20 @@ services:
       - TZ=America/Sao_Paulo
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /home/jean/.ssh:/root/.ssh:ro
       - ./logs:/app/logs
       - ./documents:/app/documents
       - ./data:/app/data
       - ./generated_images:/app/generated_images
+      - ./workspace:/app/workspace
       - ./main.py:/app/main.py
       - ./rag_service.py:/app/rag_service.py
       - ./cache_service.py:/app/cache_service.py
       - ./config.py:/app/config.py
       - ./prompts.py:/app/prompts.py
       - ./classifier.py:/app/classifier.py
+      - ./dictionary_service.py:/app/dictionary_service.py
+      - ./user_lexicon_service.py:/app/user_lexicon_service.py
+      - ./semantic_router_service.py:/app/semantic_router_service.py
       - ./coding_service.py:/app/coding_service.py
       - ./chat_service.py:/app/chat_service.py
       - ./factual_service.py:/app/factual_service.py
@@ -47,8 +50,19 @@ services:
       - ./dashboard_service.py:/app/dashboard_service.py
       - ./admin_config_service.py:/app/admin_config_service.py
       - ./video_service.py:/app/video_service.py
+      - ./mcp_filesystem_service.py:/app/mcp_filesystem_service.py
+      - ./mcp_fetch_service.py:/app/mcp_fetch_service.py
+      - ./mcp_git_service.py:/app/mcp_git_service.py
+      - ./mcp_brave_search_service.py:/app/mcp_brave_search_service.py
+      - ./mcp_database_service.py:/app/mcp_database_service.py
+      - ./mcp_code_runner_service.py:/app/mcp_code_runner_service.py
+      - ./domain_skills_service.py:/app/domain_skills_service.py
+      - ./skills_api.py:/app/skills_api.py
+      - ./phrase_extractor_guardrail.py:/app/phrase_extractor_guardrail.py
       - ./dashboard.html:/app/dashboard.html
-      - /home/jean/implementation_docs/langchain_orchestrator_architecture_v2.md:/app/docs_view/langchain_orchestrator_architecture_v2.md:ro
+      - ./docs/langchain_orchestrator_architecture_v2.md:/app/docs_view/langchain_orchestrator_architecture_v2.md:ro
+      - ./docs/semantic_filter_and_guardrails_guide.md:/app/docs_view/semantic_filter_and_guardrails_guide.md:ro
+      - ./docs/decoupling_and_reverse_proxy_guide.md:/app/docs_view/decoupling_and_reverse_proxy_guide.md:ro
       - ./README.md:/app/docs_view/README.md:ro
     depends_on:
       - qdrant

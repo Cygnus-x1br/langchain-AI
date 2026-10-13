@@ -64,7 +64,8 @@ from cache_service import lookup_cache, store_in_cache, get_cache_stats, clear_c
 from feedback_service import (
     sync_feedbacks_from_mongodb,
     check_negative_feedback_guardrail,
-    invalidate_cache_for_prompt
+    invalidate_cache_for_prompt,
+    process_immediate_negative_feedback
 )
 
 # Serviços Modulares de Tarefas
@@ -74,6 +75,14 @@ from image_service import execute_image_flow
 from social_service import execute_social_post_flow, extract_all_images
 from data_export_service import execute_data_export_flow
 from video_service import execute_short_video_flow
+from mcp_filesystem_service import execute_mcp_filesystem_flow
+from mcp_fetch_service import execute_mcp_fetch_flow
+from mcp_git_service import execute_mcp_git_flow
+from mcp_brave_search_service import execute_mcp_brave_search_flow
+from mcp_database_service import execute_mcp_database_flow
+from mcp_code_runner_service import execute_mcp_code_runner_flow
+from skills_api import router as skills_router
+from domain_skills_service import get_skill_system_prompt
 from coding_service import (
     get_coding_candidates,
     resolve_coding_tier,
@@ -97,8 +106,34 @@ from episodic_memory_service import (
 
 app = FastAPI(title="LangChain Modular Smart Router, Agent & RAG")
 
-# Montagem de imagens geradas para acesso estático
+# Montagem de imagens geradas para acesso estático (compatível com NPM e rotas diretas)
+app.mount("/images/generated", StaticFiles(directory=IMAGE_STORAGE_DIR), name="images_generated")
 app.mount("/images", StaticFiles(directory=IMAGE_STORAGE_DIR), name="images")
+
+# Registro do Router de Skills Especialistas
+app.include_router(skills_router)
+
+@app.get("/skills/openapi.json", tags=["Skills Manifesto"])
+def get_skills_openapi():
+    """Retorna uma especificação OpenAPI 3.1 limpa contendo exclusivamente as Skills Especialistas para o LibreChat."""
+    full_spec = app.openapi()
+    skills_paths = {}
+
+    for path, methods in full_spec.get("paths", {}).items():
+        if path.startswith("/v1/skills"):
+            skills_paths[path] = methods
+
+    return JSONResponse(content={
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Skills Especialistas - LangChain Orchestrator",
+            "version": "1.0.0",
+            "description": "Especificação oficial de Skills (Social Media, DevOps, Engenharia de Software) para importação no menu Actions/Skills do LibreChat."
+        },
+        "servers": [{"url": "http://10.100.10.31:8000"}],
+        "paths": skills_paths,
+        "components": full_spec.get("components", {})
+    })
 
 
 # ---------------------------------------------------------
@@ -415,6 +450,95 @@ async def admin_cache_clear(request: Request):
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
+# ---------------------------------------------------------
+# Rotas de Gestão do Dicionário Universal e Aprendizado
+# ---------------------------------------------------------
+@app.get("/v1/admin/dictionary")
+async def admin_get_dictionary():
+    """Retorna o Dicionário Universal de Termos completo por categoria."""
+    try:
+        from dictionary_service import get_full_dictionary
+        return {"status": "success", "categories": get_full_dictionary()}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.post("/v1/admin/dictionary/add")
+async def admin_add_dictionary_term(request: Request):
+    """Adiciona um novo termo/frase a uma categoria e lista específica."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not _check_admin_auth(request, body):
+        return JSONResponse(status_code=401, content={"status": "error", "message": "Acesso negado: Senha administrativa incorreta."})
+
+    cat = body.get("category")
+    field = body.get("field_type")
+    term = body.get("term")
+    if not cat or not field or not term:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Campos 'category', 'field_type' e 'term' são obrigatórios."})
+
+    from dictionary_service import add_term_to_dictionary, get_full_dictionary
+    ok = add_term_to_dictionary(cat, field, term)
+    if ok:
+        return {"status": "success", "message": f"Termo '{term}' adicionado a {cat} [{field}].", "categories": get_full_dictionary()}
+    return JSONResponse(status_code=500, content={"status": "error", "message": "Falha ao salvar termo."})
+
+
+@app.post("/v1/admin/dictionary/remove")
+async def admin_remove_dictionary_term(request: Request):
+    """Remove um termo/frase de uma categoria e lista específica."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not _check_admin_auth(request, body):
+        return JSONResponse(status_code=401, content={"status": "error", "message": "Acesso negado: Senha administrativa incorreta."})
+
+    cat = body.get("category")
+    field = body.get("field_type")
+    term = body.get("term")
+    if not cat or not field or not term:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Campos 'category', 'field_type' e 'term' são obrigatórios."})
+
+    from dictionary_service import remove_term_from_dictionary, get_full_dictionary
+    ok = remove_term_from_dictionary(cat, field, term)
+    if ok:
+        return {"status": "success", "message": f"Termo '{term}' removido de {cat} [{field}].", "categories": get_full_dictionary()}
+    return JSONResponse(status_code=500, content={"status": "error", "message": "Falha ao remover termo ou termo não encontrado."})
+
+
+@app.get("/v1/admin/dictionary/learned")
+async def admin_get_learned_patterns():
+    """Retorna a lista de padrões aprendidos automaticamente por usuário."""
+    try:
+        from user_lexicon_service import get_all_learned_patterns
+        patterns = get_all_learned_patterns(limit=200)
+        return {"status": "success", "patterns": patterns}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.post("/v1/admin/dictionary/learned/delete")
+async def admin_delete_learned_pattern(request: Request):
+    """Remove um padrão aprendido manualmente."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not _check_admin_auth(request, body):
+        return JSONResponse(status_code=401, content={"status": "error", "message": "Acesso negado: Senha administrativa incorreta."})
+
+    pat_id = body.get("id")
+    if not pat_id:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Campo 'id' obrigatório."})
+
+    from user_lexicon_service import delete_learned_pattern
+    ok = delete_learned_pattern(int(pat_id))
+    return {"status": "success" if ok else "error", "deleted": ok}
+
+
 @app.post("/v1/admin/rag/reindex")
 async def admin_rag_reindex(request: Request):
     """Dispara a releitura e reindexação vetorial de todos os arquivos da pasta /app/documents."""
@@ -554,6 +678,33 @@ async def feedback_sync():
         return res
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/v1/feedback/negative")
+async def immediate_negative_feedback(request: Request):
+    """
+    Endpoint direto / webhook para reação imediata quando o usuário clica em thumbsDown (mão negativa):
+    invalida cache, expurga padrões no léxico do usuário e remove memórias episódicas corrompidas.
+    """
+    try:
+        data = await request.json()
+        user_id = data.get("user_id", "")
+        prompt = data.get("prompt", "")
+        bad_response = data.get("bad_response", "")
+        tag = data.get("tag", "")
+
+        if not prompt:
+            return JSONResponse(status_code=400, content={"error": "Campo 'prompt' é obrigatório."})
+
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(
+            None,
+            lambda: process_immediate_negative_feedback(user_id, prompt, bad_response, tag)
+        )
+        return res
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 
 @app.on_event("startup")
@@ -921,6 +1072,12 @@ async def list_models():
     now_ts = int(time.time())
     models = [
         {"id": "agent-orchestrator", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Orquestrador Geral Unificado (LibreChat - Fast Coding)"},
+        {"id": "skill-social-media", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Especialista em Social Media (Campanhas, Carrosséis, Arte Visual & SEO)"},
+        {"id": "skill-social-smart", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Especialista em Design de Posts e Composição Visual Multimodal com Fotos (SMART)"},
+        {"id": "skill-devops", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Especialista em DevOps & Redes (Docker, CI/CD, Infra & Hardware)"},
+        {"id": "skill-coding", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Especialista em Engenharia de Software (Clean Code, SOLID & Testes)"},
+        {"id": "skill-system-designer", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Especialista em Arquitetura de Sistemas Distribuídos & Diagramas Mermaid"},
+        {"id": "skill-code-audit", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Especialista em Auditoria de Código & Segurança OWASP"},
         {"id": "agent-social", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Agente Especialista em Redes Sociais, Leads e Imagens (Instagram, LinkedIn, X, Facebook, Reddit)"},
         {"id": "agent-social-smart", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Agente Social Media SMART (Composição Multimodal OpenAI GPT Image com múltiplas fotos)"},
         {"id": "agent-coding-fast", "object": "model", "created": now_ts, "owned_by": "antigravity-orchestrator", "description": "Coding Fast: Scripts Rápidos, Edições e Automação (Qwen 32B / DeepSeek V3 / Ollama)"},
@@ -1265,6 +1422,8 @@ async def chat_completions(request: Request):
                 user_prompt = " ".join(texts)
             break
 
+    clean_user_prompt = user_prompt
+
     # Checagens visuais
     has_image_now = message_has_image(last_user_msg)
     has_image_in_history = history_has_images(messages)
@@ -1292,12 +1451,14 @@ async def chat_completions(request: Request):
     req_model = payload.get("model", "")
     is_dedicated_coding_alias = any(
         k in req_model.lower() for k in [
-            "agent-coding", "opencode", "coding-fast", "coding-exec", "coding-plan"
+            "agent-coding", "opencode", "coding-fast", "coding-exec", "coding-plan",
+            "skill-coding", "skill-devops", "skill-system-designer", "skill-code-audit"
         ]
     )
     is_dedicated_social_alias = any(
         k in req_model.lower() for k in [
-            "agent-social", "social-media", "agent-marketing", "social-post"
+            "agent-social", "social-media", "agent-marketing", "social-post",
+            "skill-social-media", "skill-social-smart"
         ]
     )
     is_dedicated_export_alias = any(
@@ -1323,13 +1484,38 @@ async def chat_completions(request: Request):
             user_prompt=user_prompt,
             messages=messages,
             last_user_msg=last_user_msg,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
+            user_id=user_id
         )
 
     # Se o classificador detectou que era frase incompleta e reescreveu o prompt com o tema anterior
-    if rewritten_prompt and rewritten_prompt.strip() and rewritten_prompt.strip() != user_prompt.strip():
+    is_rewritten = False
+    if rewritten_prompt and rewritten_prompt.strip():
+        norm_orig = re.sub(r'[^\w\s]', '', user_prompt.lower()).strip()
+        norm_rew = re.sub(r'[^\w\s]', '', rewritten_prompt.lower()).strip()
+        # Apenas considera reescrita real se agregou novos termos e tiver diferença substancial
+        if norm_orig != norm_rew and len(norm_rew) > len(norm_orig):
+            is_rewritten = True
+
+    # Respeita a decisão do classificador caso tenha retornado JSON estruturado (V2)
+    if raw_classifier_output and raw_classifier_output.strip().startswith("{"):
+        try:
+            c_json = json.loads(raw_classifier_output)
+            if isinstance(c_json, dict):
+                if c_json.get("topic_shift") is True:
+                    is_followup = False
+                elif "is_followup" in c_json:
+                    is_followup = bool(c_json.get("is_followup"))
+        except Exception:
+            pass
+
+    # Saudação casual nunca deve herdar pendência técnica de turnos anteriores
+    if category == "CASUAL_CHAT":
+        is_followup = False
+
+    if is_rewritten and is_followup:
         print(f"[Orquestrador Query Rewriter] Prompt incompleto reescrito com tema anterior: '{user_prompt}' -> '{rewritten_prompt}'")
-        is_followup = True
+        clean_user_prompt = rewritten_prompt
         # Atualiza a mensagem atual no payload de mensagens para que os modelos downstream recebam o contexto pleno
         if messages and isinstance(messages[-1], dict) and messages[-1].get("role") == "user":
             orig_c = messages[-1].get("content")
@@ -1342,6 +1528,13 @@ async def chat_completions(request: Request):
                         break
 
     print(f"[Orquestrador] Pergunta: '{user_prompt[:50]}' -> Rota: {category} (Usuário: {user_id}) | Contextual: {is_followup} | Método: {routing_method}")
+
+    # Auto-Aprendizado: memoriza padrões linguísticos únicos do usuário
+    try:
+        from user_lexicon_service import learn_user_pattern
+        learn_user_pattern(user_id=user_id, prompt=user_prompt, category=category)
+    except Exception as learn_err:
+        pass
 
     # Registro de Log
     log_entry = {
@@ -1496,13 +1689,15 @@ async def chat_completions(request: Request):
     # ---------------------------------------------------------
     feedback_guardrail = await check_negative_feedback_guardrail(user_prompt)
     if feedback_guardrail:
-        print(f"[Orquestrador Guardrail] Pergunta similar a erro anterior detectada! Injetando diretriz corretiva.")
-        log_entry["feedback_guardrail_applied"] = True
-        user_prompt += feedback_guardrail
-        if isinstance(messages[-1].get("content"), str):
-            messages[-1]["content"] += feedback_guardrail
-        elif isinstance(messages[-1].get("content"), list):
-            messages[-1]["content"].append({"type": "text", "text": feedback_guardrail})
+        # Não polui o prompt do usuário em fluxos onde o texto literal precisa ser preservado
+        if category not in ["IMAGE_GENERATION", "IMAGE_EDIT", "SOCIAL_MEDIA_POST", "VISION"]:
+            print(f"[Orquestrador Guardrail] Pergunta similar a erro anterior detectada! Injetando diretriz corretiva.")
+            log_entry["feedback_guardrail_applied"] = True
+            user_prompt += feedback_guardrail
+            if isinstance(messages[-1].get("content"), str):
+                messages[-1]["content"] += feedback_guardrail
+            elif isinstance(messages[-1].get("content"), list):
+                messages[-1]["content"].append({"type": "text", "text": feedback_guardrail})
 
     # ---------------------------------------------------------
     # Memória Episódica Persistente & Perfil Analítico do Usuário
@@ -1556,11 +1751,14 @@ async def chat_completions(request: Request):
             )
             print(f"[Orquestrador Episódico] Injetadas {len(context_parts)} diretrizes/memórias de longo prazo para '{user_id}'.")
             log_entry["episodic_memories_injected"] = len(retrieved_memories)
-            user_prompt += episodic_context
-            if isinstance(messages[-1].get("content"), str):
-                messages[-1]["content"] += episodic_context
-            elif isinstance(messages[-1].get("content"), list):
-                messages[-1]["content"].append({"type": "text", "text": episodic_context})
+            # Apenas injeta contexto episódico em rotas conversacionais/criativas de texto (ex: CASUAL_CHAT, CODING, etc.).
+            # NUNCA polui o prompt cru em rotas de ferramentas externas nem visão pura, geração de imagem ou posts sociais
+            if category not in ["WEATHER_INFO", "MCP_FILESYSTEM", "MCP_FETCH", "MCP_GIT", "MCP_BRAVE_SEARCH", "MCP_DATABASE", "MCP_CODE_RUNNER", "VISION", "IMAGE_GENERATION", "IMAGE_EDIT", "SOCIAL_MEDIA_POST"]:
+                user_prompt += episodic_context
+                if isinstance(messages[-1].get("content"), str):
+                    messages[-1]["content"] += episodic_context
+                elif isinstance(messages[-1].get("content"), list):
+                    messages[-1]["content"].append({"type": "text", "text": episodic_context})
 
 
     # ---------------------------------------------------------
@@ -1670,8 +1868,10 @@ async def chat_completions(request: Request):
         # - Se houver mais de 1 foto (ex: 2 ou mais fotos para compor): SMART
         # - Se o usuário pedir regras de design avançadas (fundo, fontes, composição): SMART
         # - Se for reedição/refinamento de um post anterior: SMART automaticamente (preserva contexto e usa IA visual)
-        # - Caso contrário (sem regras específicas, geração inicial ou 1 foto simples): FAST (sem custo de OpenAI)
-        if "smart" in req_model_lower or num_images > 1 or has_smart_instruction or (prev_was_social and is_refinement):
+        is_explicit_simple = any(k in prompt_lower for k in ["simples", "fast", "modo simples", "post simples", "postagem simples", "postgem simples", "direto", "básico", "basico"])
+        if is_explicit_simple:
+            selected_mode = "FAST"
+        elif "smart" in req_model_lower or num_images > 1 or has_smart_instruction or (prev_was_social and is_refinement):
             selected_mode = "SMART"
         else:
             selected_mode = "FAST"
@@ -1682,14 +1882,23 @@ async def chat_completions(request: Request):
         log_entry["target_destination"] = "social_flow_executor"
         log_entry["target_model"] = f"SocialMediaOrchestrator_{selected_mode}"
 
-        output_text, tools_called_log = await execute_social_post_flow(
-            user_prompt=user_prompt,
-            last_user_msg=last_user_msg,
-            messages=messages,
-            mode=selected_mode
-        )
-        log_entry["tools_called"] = tools_called_log
-        log_entry["status"] = "success"
+        try:
+            output_text, tools_called_log = await execute_social_post_flow(
+                user_prompt=user_prompt,
+                last_user_msg=last_user_msg,
+                messages=messages,
+                mode=selected_mode
+            )
+            log_entry["tools_called"] = tools_called_log
+            log_entry["status"] = "success"
+        except Exception as soc_err:
+            print(f"[Erro Fluxo Social]: {soc_err}")
+            output_text = f"⚠️ Ocorreu uma instabilidade momentânea ao estruturar o post para redes sociais: {soc_err}. Por favor, tente novamente."
+            tools_called_log = [{"action": "social_post_flow", "status": "error", "error": str(soc_err)}]
+            log_entry["tools_called"] = tools_called_log
+            log_entry["status"] = "error"
+            log_entry["error"] = str(soc_err)
+
         log_entry["response_preview"] = output_text[:250]
         log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
         write_log(log_entry)
@@ -1921,6 +2130,446 @@ async def chat_completions(request: Request):
             })
 
     # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.8: MCP Filesystem Sandbox (/app/workspace)
+    # ---------------------------------------------------------
+    if category == "MCP_FILESYSTEM":
+        print(f"[Orquestrador] Executando Fluxo MCP Filesystem Sandbox...")
+        log_entry["target_destination"] = "mcp_filesystem_engine"
+        log_entry["target_model"] = "MCPFilesystemSandbox"
+
+        output_text, tools_called_log = await execute_mcp_filesystem_flow(
+            user_prompt=user_prompt,
+            context_prompt=last_context_prompt if is_followup else "",
+            messages=messages,
+            user_id=user_id
+        )
+
+        log_entry["tools_called"] = tools_called_log
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MCPFilesystemSandbox",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def mcp_filesystem_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-mcp-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MCPFilesystemSandbox",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-mcp-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPFilesystemSandbox",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-mcp-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPFilesystemSandbox",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(mcp_filesystem_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-mcp-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MCPFilesystemSandbox",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.9: MCP Fetch Web Scraper
+    # ---------------------------------------------------------
+    if category == "MCP_FETCH":
+        print(f"[Orquestrador] Executando Fluxo MCP Fetch Web Scraper...")
+        log_entry["target_destination"] = "mcp_fetch_engine"
+        log_entry["target_model"] = "MCPFetchEngine"
+
+        output_text, tools_called_log = await execute_mcp_fetch_flow(
+            user_prompt=user_prompt,
+            context_prompt=last_context_prompt if is_followup else "",
+            messages=messages,
+            user_id=user_id
+        )
+
+        log_entry["tools_called"] = tools_called_log
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MCPFetchEngine",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def mcp_fetch_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-fetch-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MCPFetchEngine",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-fetch-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPFetchEngine",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-fetch-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPFetchEngine",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(mcp_fetch_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-fetch-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MCPFetchEngine",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.95: MCP Git Version Control
+    # ---------------------------------------------------------
+    if category == "MCP_GIT":
+        print(f"[Orquestrador] Executando Fluxo MCP Git Version Control...")
+        log_entry["target_destination"] = "mcp_git_engine"
+        log_entry["target_model"] = "MCPGitEngine"
+
+        output_text, tools_called_log = await execute_mcp_git_flow(
+            user_prompt=clean_user_prompt,
+            conversation_id=conversation_id,
+            user_id=user_id
+        )
+
+        log_entry["tools_called"] = tools_called_log
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MCPGitEngine",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def mcp_git_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-git-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MCPGitEngine",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-git-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPGitEngine",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-git-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPGitEngine",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(mcp_git_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-git-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MCPGitEngine",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.96: MCP Brave Search
+    # ---------------------------------------------------------
+    if category == "MCP_BRAVE_SEARCH":
+        print(f"[Orquestrador] Executando Fluxo MCP Brave Search...")
+        log_entry["target_destination"] = "mcp_brave_search_engine"
+        log_entry["target_model"] = "MCPBraveSearchEngine"
+
+        output_text, tools_called_log = await execute_mcp_brave_search_flow(
+            user_prompt=clean_user_prompt,
+            conversation_id=conversation_id,
+            user_id=user_id
+        )
+
+        log_entry["tools_called"] = tools_called_log
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MCPBraveSearchEngine",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def mcp_brave_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-brave-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MCPBraveSearchEngine",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-brave-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPBraveSearchEngine",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-brave-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPBraveSearchEngine",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(mcp_brave_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-brave-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MCPBraveSearchEngine",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.97: MCP Database
+    # ---------------------------------------------------------
+    if category == "MCP_DATABASE":
+        print(f"[Orquestrador] Executando Fluxo MCP Database...")
+        log_entry["target_destination"] = "mcp_database_engine"
+        log_entry["target_model"] = "MCPDatabaseEngine"
+
+        output_text, tools_called_log = await execute_mcp_database_flow(
+            user_prompt=clean_user_prompt,
+            conversation_id=conversation_id,
+            user_id=user_id
+        )
+
+        log_entry["tools_called"] = tools_called_log
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MCPDatabaseEngine",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def mcp_db_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-db-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MCPDatabaseEngine",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-db-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPDatabaseEngine",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-db-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPDatabaseEngine",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(mcp_db_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-db-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MCPDatabaseEngine",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.98: MCP Code Runner
+    # ---------------------------------------------------------
+    if category == "MCP_CODE_RUNNER":
+        print(f"[Orquestrador] Executando Fluxo MCP Code Runner...")
+        log_entry["target_destination"] = "mcp_code_runner_engine"
+        log_entry["target_model"] = "MCPCodeRunnerEngine"
+
+        output_text, tools_called_log = await execute_mcp_code_runner_flow(
+            user_prompt=clean_user_prompt,
+            conversation_id=conversation_id,
+            user_id=user_id
+        )
+
+        log_entry["tools_called"] = tools_called_log
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MCPCodeRunnerEngine",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def mcp_runner_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-runner-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MCPCodeRunnerEngine",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-runner-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPCodeRunnerEngine",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-runner-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MCPCodeRunnerEngine",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(mcp_runner_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-runner-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MCPCodeRunnerEngine",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
     # ROTA ESPECIAL 1: RAG Unificado (Documentos + Memória)
     # ---------------------------------------------------------
     if category == "DOCUMENT_RAG":
@@ -2015,7 +2664,7 @@ async def chat_completions(request: Request):
             # Contextualiza a consulta de ferramentas caso seja uma pergunta de continuação (ex: 'E para Senador?')
             output_text, tools_called_log = await execute_agent_flow(
                 category=category,
-                user_prompt=user_prompt,
+                user_prompt=clean_user_prompt,
                 context_prompt=last_context_prompt if is_followup else "",
                 user_id=user_id
             )
@@ -2111,9 +2760,16 @@ async def chat_completions(request: Request):
             messages=messages,
             is_dedicated_endpoint=is_dedicated_coding_alias
         )
+        if "skill-system-designer" in req_model.lower():
+            tier = "PLAN"
+        elif any(k in req_model.lower() for k in ["skill-devops", "skill-code-audit", "skill-coding"]):
+            tier = "EXEC"
         log_entry["coding_tier"] = tier
         route_candidates = get_coding_candidates(tier=tier)
         messages = prepare_coding_messages(messages, tier=tier)
+        skill_prompt = get_skill_system_prompt(req_model)
+        if skill_prompt:
+            messages.insert(0, {"role": "system", "content": skill_prompt})
     elif "LOCAL_THINKING" in category:
         route_candidates = get_local_thinking_candidates()
     elif "HEAVY_REASONING" in category:

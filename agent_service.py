@@ -286,7 +286,8 @@ async def execute_agent_flow(category: str, user_prompt: str, context_prompt: st
 
         if not weather_success:
             fallback_start = time.time()
-            search_query = f"previsão do tempo hoje {location}"
+            clean_city_for_search = location.replace(", BR", "").strip()
+            search_query = f"previsão do tempo {clean_city_for_search}"
             print(f"[Agente Tool Fallback] Consultando SearXNG/Tavily para: '{search_query}'")
             try:
                 if SEARXNG_URL:
@@ -457,8 +458,22 @@ async def execute_agent_flow(category: str, user_prompt: str, context_prompt: st
                                     doc_title=f"Search: {item.get('title', 'Tavily')[:30]}",
                                     ttl_days=1
                                 ))
-                elif not searx_success and not tavily_tool:
-                    tool_data = tool_data or "Nenhuma ferramenta de busca retornou resultados."
+                if not searx_success and not tavily_tool:
+                    tool_data = tool_data or ""
+
+                # Camada 3 de Fallback: MCP Brave Search independente
+                if not tool_data or "Nenhuma ferramenta" in tool_data:
+                    try:
+                        from mcp_brave_search_service import async_brave_search, format_brave_results_markdown
+                        brave_res = await async_brave_search(search_query, count=4)
+                        if brave_res.get("success") and brave_res.get("results"):
+                            tool_data = format_brave_results_markdown(brave_res)
+                            tool_name = "brave_search_results"
+                    except Exception as b_err:
+                        print(f"[Aviso Brave Fallback]: {b_err}")
+
+                if not tool_data:
+                    tool_data = "Nenhuma ferramenta de busca retornou resultados."
                     tool_name = "none"
             except Exception as e:
                 print(f"[Erro Search API]: {e}. Tentando fallback...")
@@ -536,7 +551,24 @@ DIRETRIZ DE VALIDAÇÃO:
 Apresente a resposta com base estritamente nos dados encontrados. Se houver alguma ambiguidade quanto a nomes, datas, versões ou intenção do usuário, conclua confirmando se esses dados atendem ao que ele esperava.
 """
 
-    synthesis_prompt = f"""Você é um assistente prestativo e altamente atualizado.
+    if category == "WEATHER_INFO":
+        if not tool_data or len(tool_data.strip()) < 20 or "Nenhuma ferramenta" in tool_data or "Erro na consulta" in tool_data:
+            clean_city_display = location.replace(", BR", "").strip() if 'location' in locals() else "a localidade informada"
+            return f"Não foi possível obter os dados meteorológicos atualizados para '{clean_city_display}' no momento. Por favor, tente novamente em instantes.", tools_called_log
+
+        synthesis_prompt = f"""Você é um meteorologista e assistente prestativo.
+Responda à pergunta do usuário sobre as condições meteorológicas e previsão do tempo baseando-se RIGOROSAMENTE nas informações meteorológicas obtidas em tempo real abaixo.
+Não mencione temas, leis, livros ou documentos não relacionados a clima e meteorologia.
+
+DADOS METEOROLÓGICOS OBTIDOS EM TEMPO REAL:
+{tool_data}
+
+PERGUNTA DO USUÁRIO:
+{user_prompt}
+
+Forneça uma resposta amigável, clara e concisa em português com as temperaturas previstas (máxima e mínima), condições do céu e probabilidade de chuva se disponível:"""
+    else:
+        synthesis_prompt = f"""Você é um assistente prestativo e altamente atualizado.
 Responda à pergunta do usuário baseando-se RIGOROSAMENTE nas informações e dados obtidos em tempo real abaixo.
 Não invente fatos, não confunda ferramentas ou empresas e não traga informações de temas não relacionados.
 Se as informações em tempo real trouxerem o significado exato ou o produto/tecnologia buscado, explique detalhadamente suas características, utilidades e como funciona.

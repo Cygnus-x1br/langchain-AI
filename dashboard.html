@@ -826,6 +826,130 @@
       .kpi-grid {
         grid-template-columns: 1fr;
       }
+    /* Dictionary & Lexicon Tab Styles */
+    .dict-agent-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .dict-agent-card:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+    .dict-agent-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 10px;
+    }
+    .dict-agent-name {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dict-tag-group {
+      margin-top: 4px;
+    }
+    .dict-group-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .dict-tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 160px;
+      overflow-y: auto;
+      padding: 4px 2px;
+    }
+    .dict-term-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 0.78rem;
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dict-term-chip.phrase {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(99, 102, 241, 0.25);
+      color: #c7d2fe;
+    }
+    .dict-term-chip.verb {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.25);
+      color: #a7f3d0;
+    }
+    .dict-term-chip.target {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.25);
+      color: #fde68a;
+    }
+    .dict-term-chip .btn-del-term {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: bold;
+      transition: color 0.15s;
+    }
+    .dict-term-chip .btn-del-term:hover {
+      color: #f87171;
+    }
+    .dict-add-form {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      padding-top: 10px;
+      border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    }
+    .dict-add-input {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      color: var(--text-main);
+      font-size: 0.8rem;
+    }
+    .dict-add-select {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 6px 8px;
+      color: var(--text-main);
+      font-size: 0.8rem;
+    }
+    .dict-add-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .dict-add-btn:hover {
+      opacity: 0.9;
     }
   </style>
 </head>
@@ -856,6 +980,9 @@
       </button>
       <button class="tab-btn" onclick="switchTab('models')">
         🎯 Modelos & Prioridades
+      </button>
+      <button class="tab-btn" onclick="switchTab('dictionary')">
+        📚 Dicionário & Vocabulário
       </button>
       <button class="tab-btn" onclick="switchTab('admin')">
         ⚙️ Administração & Guardrails
@@ -1039,7 +1166,69 @@
       </div>
     </section>
 
-    <!-- TAB 6: ADMINISTRAÇÃO & GUARDRAILS -->
+    <!-- TAB 6: DICIONÁRIO & VOCABULÁRIO -->
+    <section id="tab-dictionary" class="tab-content">
+      <div class="config-section">
+        <div class="config-header">
+          <div>
+            <div class="config-title">
+              <span>📚 Dicionário Universal de Termos & Intenções</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+              Gerencie os termos, verbos e frases-chave que disparam instantaneamente cada Agente Especialista em 0ms.
+              Você pode incluir novos termos para ampliar o repertório ou auditar as gírias e expressões que o sistema aprendeu de cada usuário.
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="dictSearchFilter" placeholder="Filtrar termos ou agente..." class="search-box" style="font-size: 0.8rem; padding: 6px 10px;" oninput="filterDictionaryCards()" />
+            <button class="btn-refresh" onclick="loadDictionaryTab()">
+              🔄 Atualizar
+            </button>
+          </div>
+        </div>
+
+        <!-- Seção dos Agentes e Termos -->
+        <div id="dictAgentsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+          <p style="color: var(--text-muted);">Carregando catálogo de termos...</p>
+        </div>
+
+        <!-- Seção de Padrões Aprendidos por Usuário -->
+        <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+              <h3 style="font-size: 1.05rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px;">
+                🧠 Padrões Linguísticos Aprendidos por Usuário (Auto-Lexicon)
+              </h3>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                Expressões e dialetos que o orquestrador memorizou automaticamente a partir das interações para antecipar a rota em 0ms.
+              </p>
+            </div>
+            <span id="learnedPatternsCountBadge" class="badge" style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe;">0 padrões</span>
+          </div>
+
+          <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+            <table class="logs-table">
+              <thead>
+                <tr>
+                  <th>Usuário</th>
+                  <th>Padrão / Expressão Aprendida</th>
+                  <th>Categoria Mapeada</th>
+                  <th>Frequência</th>
+                  <th>Último Uso</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="learnedPatternsTableBody">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum padrão aprendido registrado ainda.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 7: ADMINISTRAÇÃO & GUARDRAILS -->
     <section id="tab-admin" class="tab-content">
       <!-- Barra de Autenticação / Senha Administrativa -->
       <div id="adminAuthBanner" style="background: rgba(17, 24, 39, 0.9); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
@@ -1203,6 +1392,35 @@
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+          <!-- Motor de Classificação & Roteamento -->
+          <div class="guardrail-field" style="grid-column: 1 / -1; background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.3);">
+            <div class="guardrail-label">
+              <span style="color: #60a5fa; font-weight: 600;">🎯 Motor de Classificação & Roteamento (Router Engine)</span>
+              <span id="val_classifier_engine" style="color: #38bdf8; font-family: 'JetBrains Mono'; font-weight: bold;">Modo Sombra (V2 Oficial + V1 Comparador)</span>
+            </div>
+            <p class="guardrail-sub">
+              Selecione o motor ativo para classificar intenções: 
+              <strong>Modo Sombra</strong> (V2 responde oficialmente e V1 gera logs de comparação A/B em paralelo), 
+              <strong>V2 Semântico Vetorial</strong> (embeddings locais + JSON Schema estrito), ou 
+              <strong>V1 Legado</strong> (dicionário universal + regex).
+            </p>
+            <select id="input_classifier_engine" class="guardrail-input" style="background: var(--bg-card); cursor: pointer; font-weight: 500;" onchange="updateGuardrailPreview('classifier_engine')">
+              <option value="SHADOW_MODE">⚡ Modo Sombra (V2 Oficial como resposta + V1 em paralelo para comparação)</option>
+              <option value="V2_SEMANTIC_VECTOR">🚀 V2 Semântico Vetorial (Novo Motor 100% Ativo: Qdrant + JSON Schema)</option>
+              <option value="V1_LEGACY">🛡️ V1 Legado (Motor Anterior: Dicionário + Regex + LLM Livre)</option>
+            </select>
+          </div>
+
+          <!-- Limiar de Similaridade do Roteador Vetorial V2 -->
+          <div class="guardrail-field">
+            <div class="guardrail-label">
+              <span>Roteador Vetorial V2: Limiar de Confiança</span>
+              <span id="val_semantic_router_threshold" style="color: #38bdf8; font-family: 'JetBrains Mono';">0.78</span>
+            </div>
+            <p class="guardrail-sub">Similaridade de cosseno mínima no Qdrant para rotear imediatamente (0.50 a 0.95). Padrão: 0.78.</p>
+            <input type="number" step="0.01" min="0.50" max="0.95" id="input_semantic_router_threshold" class="guardrail-input" oninput="updateGuardrailPreview('semantic_router_threshold')">
+          </div>
+
           <!-- RAG High Confidence Threshold -->
           <div class="guardrail-field">
             <div class="guardrail-label">
@@ -1326,6 +1544,8 @@
         loadDoc('architecture');
       } else if (tabId === 'models') {
         loadModelsConfig();
+      } else if (tabId === 'dictionary') {
+        loadDictionaryTab();
       } else if (tabId === 'admin') {
         loadAdminConfig();
       }
@@ -1954,7 +2174,14 @@
       if (!input || !valSpan) return;
 
       let val = input.value;
-      if (k.includes('timeout')) {
+      if (k === 'classifier_engine') {
+        const labels = {
+          'SHADOW_MODE': 'Modo Sombra (V2 Oficial + V1 Comparador)',
+          'V2_SEMANTIC_VECTOR': 'V2 Semântico Vetorial (Ativo)',
+          'V1_LEGACY': 'V1 Legado (Dicionário + Regex)'
+        };
+        valSpan.innerText = labels[val] || val;
+      } else if (k.includes('timeout')) {
         valSpan.innerText = `${val}s`;
       } else if (k.includes('ttl')) {
         valSpan.innerText = `${val} dias`;
@@ -1978,7 +2205,11 @@
       const inputs = document.querySelectorAll('[id^="input_"]');
       inputs.forEach(inp => {
         const key = inp.id.replace('input_', '');
-        guardrailsToSave[key] = parseFloat(inp.value);
+        if (key === 'classifier_engine') {
+          guardrailsToSave[key] = inp.value;
+        } else {
+          guardrailsToSave[key] = parseFloat(inp.value);
+        }
       });
 
       const payload = {
@@ -2220,6 +2451,309 @@
           showToast('Senha incorreta! Operação cancelada.', '❌');
         } else {
           showToast(`Erro ao resetar: ${res.message}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro na requisição: ${err}`, '❌');
+      }
+    }
+
+    // =========================================================
+    // GERENCIADOR DA ABA DE DICIONÁRIO & APRENDIZADO DE TERMOS
+    // =========================================================
+    let allDictCategories = {};
+
+    const CATEGORY_META = {
+      "IMAGE_EDIT": { title: "Edição In-Place / Inpainting", icon: "🎨", color: "#ec4899", desc: "Edição e troca de elementos, cores e fundos em fotos existentes" },
+      "IMAGE_GENERATION": { title: "Geração de Imagens", icon: "🖼️", color: "#8b5cf6", desc: "Criação de novas ilustrações, fotos artísticas e renderizações" },
+      "VISION": { title: "Visão & Análise Multimodal", icon: "👁️", color: "#3b82f6", desc: "Descrição de fotos, leitura de gráficos e OCR de documentos" },
+      "DATA_EXPORT_CHART": { title: "Planilhas & Gráficos", icon: "📊", color: "#10b981", desc: "Estruturação de dados em Excel (.xlsx), CSV e gráficos estatísticos" },
+      "WEATHER_INFO": { title: "Clima & Meteorologia", icon: "⛅", color: "#06b6d4", desc: "Previsão do tempo, chuva, temperatura e vento em tempo real" },
+      "REALTIME_SEARCH": { title: "Busca Web em Tempo Real", icon: "🌐", color: "#f59e0b", desc: "Notícias recentes, cotações de moedas, esportes e pesquisas" },
+      "CODING": { title: "Engenharia de Software & Código", icon: "💻", color: "#6366f1", desc: "Geração de scripts, depuração de erros, queries SQL e automações" },
+      "SOCIAL_MEDIA_POST": { title: "Redes Sociais & Copywriting", icon: "📱", color: "#f43f5e", desc: "Criação de posts, legendas, carrosséis e campanhas para redes" },
+      "SHORT_VIDEO": { title: "Vídeos Curtos / Reels & Shorts", icon: "🎬", color: "#a855f7", desc: "Roteiros audiovisuais e vídeos dinâmicos verticais para redes" },
+      "HEAVY_REASONING": { title: "Raciocínio Pesado & Matemática", icon: "🧠", color: "#ef4444", desc: "Cálculo avançado, lógica formal, equações e xadrez com CoT profundo" },
+      "LOCAL_THINKING": { title: "Reflexão Local Passo a Passo", icon: "🤔", color: "#64748b", desc: "Respostas explicativas com cadeia de raciocínio encadeada" }
+    };
+
+    const FIELD_LABELS = {
+      "verbs": { label: "Verbos & Ações", class: "verb", icon: "⚡" },
+      "targets": { label: "Alvos & Objetos", class: "target", icon: "🎯" },
+      "phrases": { label: "Frases de Intenção", class: "phrase", icon: "💬" },
+      "triggers": { label: "Gatilhos & Termos", class: "verb", icon: "⚡" },
+      "topics": { label: "Tópicos Especializados", class: "target", icon: "📚" },
+      "formats": { label: "Formatos", class: "target", icon: "📐" },
+      "networks": { label: "Canais / Redes", class: "target", icon: "📡" },
+      "content_types": { label: "Tipos de Conteúdo", class: "verb", icon: "📝" },
+      "actions": { label: "Ações Técnicas", class: "verb", icon: "⚙️" },
+      "languages": { label: "Linguagens & Tecnologias", class: "target", icon: "🏷️" }
+    };
+
+    async function loadDictionaryTab() {
+      const container = document.getElementById('dictAgentsContainer');
+      container.innerHTML = '<p style="color: var(--text-muted);">Carregando catálogo de termos...</p>';
+
+      try {
+        const resp = await fetch('/v1/admin/dictionary');
+        const data = await resp.json();
+        if (data.status === 'success' && data.categories) {
+          allDictCategories = data.categories;
+          renderDictionaryCards(allDictCategories);
+        } else {
+          container.innerHTML = `<p style="color: #f87171;">Erro ao carregar dicionário: ${data.message || 'Desconhecido'}</p>`;
+        }
+      } catch (err) {
+        container.innerHTML = `<p style="color: #f87171;">Erro de conexão: ${err}</p>`;
+      }
+
+      loadLearnedPatterns();
+    }
+
+    function renderDictionaryCards(categories) {
+      const container = document.getElementById('dictAgentsContainer');
+      container.innerHTML = '';
+
+      const keys = Object.keys(categories);
+      if (keys.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted);">Nenhuma categoria encontrada no dicionário.</p>';
+        return;
+      }
+
+      keys.forEach(catKey => {
+        const catData = categories[catKey];
+        const meta = CATEGORY_META[catKey] || { title: catKey, icon: '🤖', color: '#6366f1', desc: '' };
+
+        let totalTerms = 0;
+        Object.values(catData).forEach(arr => {
+          if (Array.isArray(arr)) totalTerms += arr.length;
+        });
+
+        const fieldTypes = Object.keys(catData);
+        let optionsHtml = '';
+        fieldTypes.forEach(ft => {
+          const fl = FIELD_LABELS[ft] ? FIELD_LABELS[ft].label : ft;
+          optionsHtml += `<option value="${ft}">${fl}</option>`;
+        });
+
+        let groupsHtml = '';
+        fieldTypes.forEach(ft => {
+          const arr = catData[ft] || [];
+          const fl = FIELD_LABELS[ft] || { label: ft, class: '', icon: '•' };
+          let chipsHtml = '';
+          arr.forEach(term => {
+            chipsHtml += `
+              <span class="dict-term-chip ${fl.class}">
+                ${term}
+                <span class="btn-del-term" onclick="deleteDictionaryTerm('${catKey}', '${ft}', '${term.replace(/'/g, "\\'")}')" title="Remover termo">&times;</span>
+              </span>
+            `;
+          });
+
+          groupsHtml += `
+            <div class="dict-tag-group">
+              <div class="dict-group-title">
+                <span>${fl.icon} ${fl.label}</span>
+                <span style="opacity: 0.6; font-size: 0.7rem;">(${arr.length})</span>
+              </div>
+              <div class="dict-tags-container">
+                ${chipsHtml || '<span style="color: var(--text-muted); font-size: 0.75rem;">Nenhum termo cadastrado</span>'}
+              </div>
+            </div>
+          `;
+        });
+
+        const card = document.createElement('div');
+        card.className = 'dict-agent-card';
+        card.setAttribute('data-category', catKey.toLowerCase());
+        card.innerHTML = `
+          <div class="dict-agent-header">
+            <div class="dict-agent-name">
+              <span>${meta.icon}</span>
+              <div>
+                <div style="font-size: 0.95rem; font-weight: 700;">${catKey}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">${meta.title}</div>
+              </div>
+            </div>
+            <span class="badge" style="background: rgba(255,255,255,0.06); color: ${meta.color}; border: 1px solid rgba(255,255,255,0.1); font-size: 0.75rem;">
+              ${totalTerms} termos
+            </span>
+          </div>
+
+          <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+            ${meta.desc}
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${groupsHtml}
+          </div>
+
+          <div class="dict-add-form">
+            <select id="sel_type_${catKey}" class="dict-add-select">
+              ${optionsHtml}
+            </select>
+            <input type="text" id="inp_term_${catKey}" class="dict-add-input" placeholder="Novo termo ou frase..." onkeydown="if(event.key==='Enter') addNewDictionaryTerm('${catKey}')" />
+            <button class="dict-add-btn" onclick="addNewDictionaryTerm('${catKey}')">＋ Adicionar</button>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function filterDictionaryCards() {
+      const q = document.getElementById('dictSearchFilter').value.toLowerCase().trim();
+      const cards = document.querySelectorAll('.dict-agent-card');
+      cards.forEach(card => {
+        const text = card.textContent.toLowerCase();
+        card.style.display = text.includes(q) ? 'flex' : 'none';
+      });
+    }
+
+    async function addNewDictionaryTerm(catKey) {
+      const sel = document.getElementById(`sel_type_${catKey}`);
+      const inp = document.getElementById(`inp_term_${catKey}`);
+      const fieldType = sel ? sel.value : 'phrases';
+      const term = inp ? inp.value.trim() : '';
+
+      if (!term) {
+        showToast('Digite um termo ou frase para adicionar.', '⚠️');
+        return;
+      }
+
+      const pwd = await promptAdminPassword();
+      if (!pwd) return;
+
+      try {
+        const resp = await fetch('/v1/admin/dictionary/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({
+            category: catKey,
+            field_type: fieldType,
+            term: term,
+            admin_password: pwd
+          })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast(`Termo '${term}' incluído com sucesso em ${catKey}!`, '✅');
+          allDictCategories = res.categories;
+          renderDictionaryCards(allDictCategories);
+          inp.value = '';
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha administrativa incorreta!', '❌');
+        } else {
+          showToast(`Erro ao adicionar termo: ${res.message}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro na requisição: ${err}`, '❌');
+      }
+    }
+
+    async function deleteDictionaryTerm(catKey, fieldType, term) {
+      if (!confirm(`Deseja realmente remover o termo '${term}' da categoria ${catKey}?`)) {
+        return;
+      }
+
+      const pwd = await promptAdminPassword();
+      if (!pwd) return;
+
+      try {
+        const resp = await fetch('/v1/admin/dictionary/remove', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({
+            category: catKey,
+            field_type: fieldType,
+            term: term,
+            admin_password: pwd
+          })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast(`Termo '${term}' removido com sucesso!`, '🗑️');
+          allDictCategories = res.categories;
+          renderDictionaryCards(allDictCategories);
+        } else if (resp.status === 401) {
+          setStoredAdminPassword('');
+          showToast('Senha administrativa incorreta!', '❌');
+        } else {
+          showToast(`Erro ao remover: ${res.message}`, '❌');
+        }
+      } catch (err) {
+        showToast(`Erro na requisição: ${err}`, '❌');
+      }
+    }
+
+    async function loadLearnedPatterns() {
+      const tbody = document.getElementById('learnedPatternsTableBody');
+      const badge = document.getElementById('learnedPatternsCountBadge');
+      if (!tbody) return;
+
+      try {
+        const resp = await fetch('/v1/admin/dictionary/learned');
+        const data = await resp.json();
+        if (data.status === 'success' && data.patterns) {
+          const list = data.patterns;
+          if (badge) badge.innerText = `${list.length} padrões aprendidos`;
+
+          if (list.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum padrão aprendido registrado ainda. O sistema memorizará automaticamente conforme as conversas acontecerem.</td></tr>`;
+            return;
+          }
+
+          let rowsHtml = '';
+          list.forEach(p => {
+            const shortUser = p.user_id && p.user_id.length > 16 ? p.user_id.substring(0, 16) + '...' : (p.user_id || 'Anônimo');
+            rowsHtml += `
+              <tr>
+                <td><code style="color: #c7d2fe; font-size: 0.78rem;">${shortUser}</code></td>
+                <td><strong style="color: var(--text-main); font-size: 0.85rem;">"${p.pattern}"</strong></td>
+                <td><span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; font-size: 0.75rem;">${p.category}</span></td>
+                <td><span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #6ee7b7; font-size: 0.75rem;">${p.frequency}x</span></td>
+                <td style="color: var(--text-muted); font-size: 0.78rem;">${p.last_used_at ? p.last_used_at.replace('T', ' ').substring(0, 19) : '-'}</td>
+                <td>
+                  <button class="btn-refresh" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-color: rgba(239, 68, 68, 0.2);" onclick="deleteLearnedPattern(${p.id})">
+                    🗑️ Excluir
+                  </button>
+                </td>
+              </tr>
+            `;
+          });
+          tbody.innerHTML = rowsHtml;
+        }
+      } catch (err) {
+        console.error('Falha ao carregar padrões aprendidos:', err);
+      }
+    }
+
+    async function deleteLearnedPattern(patId) {
+      if (!confirm('Deseja excluir este padrão aprendido do perfil do usuário?')) return;
+      const pwd = await promptAdminPassword();
+      if (!pwd) return;
+
+      try {
+        const resp = await fetch('/v1/admin/dictionary/learned/delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Password': pwd
+          },
+          body: JSON.stringify({ id: patId, admin_password: pwd })
+        });
+        const res = await resp.json();
+        if (resp.status === 200 && res.status === 'success') {
+          showToast('Padrão aprendido excluído com sucesso!', '🗑️');
+          loadLearnedPatterns();
+        } else {
+          showToast('Erro ao excluir padrão.', '❌');
         }
       } catch (err) {
         showToast(`Erro na requisição: ${err}`, '❌');
