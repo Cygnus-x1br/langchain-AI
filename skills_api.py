@@ -247,3 +247,28 @@ async def api_clean_code_refactor(req: CleanCodeRefactorRequest):
         language=req.language,
         focus_areas=req.focus_areas
     )
+
+
+# =========================================================================
+# ENDPOINTS REST DE EXPORTAÇÃO & DOCUMENTOS (PDF)
+# =========================================================================
+
+class MarkdownToPdfRequest(BaseModel):
+    markdown_text: str = Field(..., description="Texto em Markdown a ser convertido em documento PDF profissional", example="# Resumo Executivo\n\nEste é um exemplo de texto formatado.")
+    title: Optional[str] = Field(None, description="Título do documento exibido no cabeçalho e capa", example="A Companhia de Jesus - Apresentação")
+    author: Optional[str] = Field("LangChain Orchestrator", description="Autor ou assinatura corporativa no rodapé")
+
+
+@router.post("/export/markdown-to-pdf", summary="Exportação: Conversor de Markdown para PDF", description="Converte qualquer texto formatado em Markdown em um documento PDF profissional (A4) com tipografia executiva, cabeçalhos e paginação.")
+async def api_markdown_to_pdf(req: MarkdownToPdfRequest):
+    from pdf_export_service import convert_markdown_to_pdf, format_pdf_markdown_card
+    res = convert_markdown_to_pdf(
+        markdown_text=req.markdown_text,
+        title=req.title,
+        author=req.author or "LangChain Orchestrator"
+    )
+    if res.get("status") == "success":
+        res["download_markdown"] = f"[📥 Baixar Documento em PDF ({res['filename']})]({res['pdf_url']})"
+        res["card"] = format_pdf_markdown_card(res)
+    return res
+

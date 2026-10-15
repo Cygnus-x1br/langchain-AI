@@ -20,6 +20,7 @@ from typing import Tuple, List, Optional, Dict, Any
 
 TRIGGER_KEYWORDS = [
     r"(?:inclua|incluir|adicione|adicionar|coloque|colocar|insira|inserir|ponha|bote|escreva|escrever|use|usando|utilize|utilizando|com)\s+(?:a\s+frase|as\s+frases|o\s+texto|os\s+textos|os\s+dizeres|o\s+t[ií]tulo|os\s+t[ií]tulos|a\s+seguinte\s+frase|as\s+seguintes\s+frases)",
+    r"(?:altere|alterar|mude|mudar|troque|trocar|substitua|substituir)\s+(?:a\s+frase|as\s+frases|o\s+texto|os\s+textos|o\s+t[ií]tulo)\s+(?:para|por)",
     r"(?:inclua|coloque|insira|escreva)\s+(?:na\s+arte|na\s+foto|na\s+imagem|no\s+post)\s+(?:a\s+frase|o\s+texto|os\s+textos|os\s+dizeres)",
 ]
 
@@ -28,6 +29,45 @@ IGNORE_META_WORDS = [
     "post anterior", "postagem", "arte", "banner", "feed", "story", "stories",
     "provedor", "modelo", "diretriz", "aprendizado", "instrução", "prompt", "resposta"
 ]
+
+INSTRUCTION_COMMAND_PATTERNS = [
+    r"^(?:faça|fazer|monte|montar|crie|criar|gere|gerar|produza|produzir)\s+(?:um[a]?\s+)?(?:post|postagem|arte|montagem|foto|imagem|design|story|feed|carrossel|banner)",
+    r"^(?:quero|gostaria\s+de)\s+(?:postar|um[a]?\s+post|um[a]?\s+arte|um[a]?\s+montagem|uma?\s+foto)",
+    r"(?:para\s+postar|pro\s+feed|pro\s+insta|no\s+instagram|no\s+feed|no\s+stories|no\s+linkedin)",
+    r"^(?:tire|tirar|remova|remover|apague|apagar)\s+(?:tudo|o\s+texto|as\s+letras|as\s+frases|o\s+que\s+estiver\s+escrito)",
+    r"^(?:deixe|deixar)\s+(?:só|apenas|somente)\s+(?:a\s+foto|a\s+imagem|as\s+fotos)",
+    r"^(?:mantenha|manter)\s+(?:a\s+mesma\s+arte|a\s+mesma\s+foto|a\s+foto)",
+    r"^(?:refaça|refazer|recrie|recriar|edite|editar|ajuste|ajustar)\s+(?:o\s+post|a\s+edição|a\s+foto|a\s+imagem)",
+    r"(?:dos?\s+meus\s+filhos|das?\s+minhas\s+fotos|minha\s+foto|minhas\s+fotos|meus\s+filhos|minha\s+fam[ií]lia)",
+    r"(?:utilize|use|usando)\s+o\s+modelo",
+]
+
+NO_TEXT_PATTERNS = [
+    r"(?:tire|tirar|remova|remover|apague|apagar)\s+tudo(?:\s+o\s+que\s+estiver\s+escrito)?",
+    r"(?:deixe|deixar)\s+(?:só|apenas|somente)\s+(?:a\s+foto|a\s+imagem|as\s+fotos)",
+    r"\b(?:sem\s+texto|sem\s+nada\s+escrito|sem\s+frase|sem\s+legenda|limpe\s+o\s+texto|sem\s+letras|deixe\s+sem\s+texto)\b"
+]
+
+
+def is_instruction_command(phrase: str) -> bool:
+    """Verifica se uma frase é na verdade um comando/instrução de prompt em vez de um texto para ser impresso."""
+    if not phrase:
+        return True
+    p = phrase.lower().strip()
+    if p in IGNORE_META_WORDS or len(p) < 2:
+        return True
+    for pat in INSTRUCTION_COMMAND_PATTERNS:
+        if re.search(pat, p):
+            return True
+    return False
+
+
+def is_no_text_intent(text: str) -> bool:
+    """Detecta se o usuário pediu expressamente para não incluir texto ou remover textos da imagem."""
+    if not text:
+        return False
+    p = text.lower()
+    return any(re.search(pat, p) for pat in NO_TEXT_PATTERNS)
 
 
 def _clean_phrase(text: str) -> str:
@@ -51,10 +91,36 @@ def extract_phrases_from_text(text: str) -> List[str]:
     if not text:
         return []
 
+    # Se a intenção explícita for remover texto / deixar só a foto, não há frase para renderizar
+    if is_no_text_intent(text):
+        return []
+
+    # 0. Checagem prioritária de substituição explícita ("substitua 'A' por 'B'", "troque 'A' por 'B'")
+    sub_match = re.search(
+        r'(?:substitua|troque|mude|altere)\s+(?:apenas\s+|só\s+)?(?:a\s+frase|o\s+texto)?\s*["“\'«]([^"”\'»\n]+)["”\'»]\s*(?:por|para)\s*["“\'«]([^"”\'»\n]+)["”\'»]',
+        text,
+        re.IGNORECASE
+    )
+    if sub_match:
+        new_p = _clean_phrase(sub_match.group(2))
+        if new_p and not is_instruction_command(new_p):
+            return [new_p]
+
+    # 0.1 Checagem de alteração de frase ("altere a frase para: X", "mude a frase para X")
+    alt_match = re.search(
+        r'(?:altere|alterar|mude|mudar|troque|trocar|substitua|substituir)\s+(?:a\s+frase|o\s+texto|o\s+t[ií]tulo)\s+(?:para|por)\s*[:=-]?\s*["“\'«]?([^"”\'»\n]+?)["”\'»]?(?:\s*$|\s+mas|\s+mantendo|\.)',
+        text,
+        re.IGNORECASE
+    )
+    if alt_match:
+        cand = _clean_phrase(alt_match.group(1))
+        if cand and not is_instruction_command(cand):
+            return [cand]
+
     # 1. Busca por aspas (duplas, simples, tipográficas, guillemets)
-    quote_matches = re.findall(r'["“"\'«]([^"”"\'»\n]{2,100})["”"\'»]', text)
+    quote_matches = re.findall(r'["“\'«]([^"”\'»\n]{2,100})["”\'»]', text)
     clean_quotes = [_clean_phrase(q) for q in quote_matches if _clean_phrase(q)]
-    valid_quotes = [q for q in clean_quotes if q.lower() not in IGNORE_META_WORDS and len(q) >= 2 and not any(m in q.lower() for m in ["provedor:", "modelo:"])]
+    valid_quotes = [q for q in clean_quotes if not is_instruction_command(q) and not any(m in q.lower() for m in ["provedor:", "modelo:"])]
     if valid_quotes:
         return valid_quotes
 
@@ -150,20 +216,127 @@ Retorne APENAS o JSON."""
     return []
 
 
+def extract_phrase_intent(text: str) -> Dict[str, Any]:
+    """
+    Analisa semanticamente e deterministicamente a intenção do usuário em relação a textos na arte:
+    - remove_all_text: "Tire tudo que estiver escrito", "Deixe só a foto", "Sem texto"
+    - replace_phrase: "substitua 'A' por 'B'"
+    - set_phrase: "altere a frase para: 'B'"
+    - remove_word: "remova a palavra 'A'"
+    - explicit_phrases: aspas, tópicos ou 'inclua a frase X'
+    """
+    if not text:
+        return {"action": "none", "headline": None, "subhead": None, "old_phrase": None, "remove_word": None, "remove_all_text": False, "has_explicit_text": False}
+
+    # 1. Detecção de remoção total de texto
+    if is_no_text_intent(text):
+        return {
+            "action": "remove_all_text",
+            "headline": None,
+            "subhead": None,
+            "old_phrase": None,
+            "remove_word": None,
+            "remove_all_text": True,
+            "has_explicit_text": False
+        }
+
+    # 2. Detecção de substituição de frase ("substitua 'A' por 'B'")
+    sub_match = re.search(
+        r'(?:substitua|troque|mude|altere)\s+(?:apenas\s+|só\s+)?(?:a\s+frase|o\s+texto)?\s*["“\'«]([^"”\'»\n]+)["”\'»]\s*(?:por|para)\s*["“\'«]([^"”\'»\n]+)["”\'»]',
+        text,
+        re.IGNORECASE
+    )
+    if sub_match:
+        old_p = _clean_phrase(sub_match.group(1))
+        new_p = _clean_phrase(sub_match.group(2))
+        return {
+            "action": "replace_phrase",
+            "headline": new_p,
+            "subhead": None,
+            "old_phrase": old_p,
+            "remove_word": None,
+            "remove_all_text": False,
+            "has_explicit_text": True
+        }
+
+    # 3. Detecção de remoção de palavra pontual ("remova apenas a palavra 'montagem'")
+    rem_word_match = re.search(
+        r'(?:remova|tire|apague)\s+(?:do\s+post\s+anterior\s+)?(?:apenas\s+|só\s+)?(?:a\s+palavra|o\s+termo)\s*["“\'«]?([^"”\'»\n.]+?)["”\'»]?(?:\s*$|\.|\s+utilize|\s+use)',
+        text,
+        re.IGNORECASE
+    )
+    if rem_word_match:
+        w = _clean_phrase(rem_word_match.group(1))
+        return {
+            "action": "remove_word",
+            "headline": None,
+            "subhead": None,
+            "old_phrase": None,
+            "remove_word": w,
+            "remove_all_text": False,
+            "has_explicit_text": False
+        }
+
+    # 4. Detecção de alteração/definição de nova frase ("altere a frase para: X")
+    alt_match = re.search(
+        r'(?:altere|alterar|mude|mudar|troque|trocar|substitua|substituir)\s+(?:a\s+frase|o\s+texto|o\s+t[ií]tulo)\s+(?:para|por)\s*[:=-]?\s*["“\'«]?([^"”\'»\n]+?)["”\'»]?(?:\s*$|\s+mas|\s+mantendo|\.)',
+        text,
+        re.IGNORECASE
+    )
+    if alt_match:
+        cand = _clean_phrase(alt_match.group(1))
+        if cand and not is_instruction_command(cand):
+            return {
+                "action": "set_phrase",
+                "headline": cand,
+                "subhead": None,
+                "old_phrase": None,
+                "remove_word": None,
+                "remove_all_text": False,
+                "has_explicit_text": True
+            }
+
+    # 5. Extração padrão de frases do texto (aspas, tópicos, triggers)
+    phrases = extract_phrases_from_text(text)
+    if phrases:
+        h = phrases[0] if not is_instruction_command(phrases[0]) else None
+        s = phrases[1] if len(phrases) > 1 and not is_instruction_command(phrases[1]) else None
+        if h:
+            return {
+                "action": "set_phrase",
+                "headline": h,
+                "subhead": s,
+                "old_phrase": None,
+                "remove_word": None,
+                "remove_all_text": False,
+                "has_explicit_text": True
+            }
+
+    return {
+        "action": "none",
+        "headline": None,
+        "subhead": None,
+        "old_phrase": None,
+        "remove_word": None,
+        "remove_all_text": False,
+        "has_explicit_text": False
+    }
+
+
 async def extract_user_phrases_guardrail(user_prompt: str, messages: list) -> Tuple[Optional[str], Optional[str]]:
     """
     Função principal de alto nível:
-    1. Tenta extração determinística no prompt atual.
+    1. Avalia a intenção estruturada de frases no prompt atual.
     2. Se for reedição ("as frases solicitadas", "refaça o post"), busca no histórico.
     3. Se houver gatilho de 'inclua a frase' mas sem aspas claras, usa o guardrail LLM rápido.
     Retorna (headline, subhead).
     """
-    # 1. Determinístico no prompt atual
-    found = extract_phrases_from_text(user_prompt)
-    if found:
-        h = found[0]
-        s = found[1] if len(found) > 1 else None
-        return h, s
+    intent = extract_phrase_intent(user_prompt)
+    if intent["remove_all_text"]:
+        return None, None
+
+    if intent["headline"]:
+        return intent["headline"], intent["subhead"]
 
     # 2. Busca retroativa em histórico caso o prompt atual faça referência
     is_referencing_history = any(k in user_prompt.lower() for k in [

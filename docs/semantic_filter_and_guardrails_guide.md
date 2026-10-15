@@ -182,12 +182,38 @@ Projetado especificamente para impedir que agentes criativos de marketing invent
    - Em pedidos de reedição (*"refaça o post com as frases solicitadas"*), o extrator varre as mensagens anteriores do usuário em busca das frases exatas originais.
 6. **Sanitização de Metatags:**
    - Remove defensivamente blocos injetados pelo sistema (`[DIRETRIZ DE APRENDIZADO]`, `[CONTEXTO & PREFERÊNCIAS]`) e palavras-chave estruturais (`**Provedor:**`, `**Modelo:**`).
-7. **Fallback via Guardrail Semântico (`Classifier_Fast`):**
+7. **Filtro de Comandos Imperativos (`is_instruction_command`):**
+   - Detecta e descarta instruções ao bot (ex.: *"faça uma montagem dos meus filhos"*, *"quero postar no instagram"*, *"crie um post"*, *"deixe só a foto"*), garantindo que comandos do usuário **nunca** sejam confundidos com frases de sobreposição tipográfica no post.
+   - Se o usuário não especificou nenhuma frase para ser escrita, a composição visual é mantida 100% limpa (`headline = ""`), orientando o motor de imagem explicitamente a não desenhar letras ou textos.
+8. **Filtro de Intenção Estruturada (`extract_phrase_intent`):**
+   - Classifica a ação semântica em relação aos textos da arte:
+     - `remove_all_text`: *"tire tudo que estiver escrito"*, *"deixe só a foto"*, *"sem texto"* (gera restauração limpa).
+     - `replace_phrase`: *"substitua 'A' por 'B'"*, *"troque a frase 'A' por 'B'"* (substituição cirúrgica).
+     - `remove_word`: *"remova apenas a palavra 'montagem'"* (remoção pontual de palavra).
+     - `set_phrase`: *"altere a frase para: 'B'"* (alteração de frase mantendo a cena).
+9. **Fallback via Guardrail Semântico (`Classifier_Fast`):**
    - Se o prompt contiver intenção de frase em formato livre mas não puder ser segmentado por regex pura, dispara uma extração JSON via LLM com temperatura `0.0`.
 
 ---
 
-### 4.2. Guardrail de Intenção Genérica
+### 4.2. Continuidade do Modelo Criador e Vantagem Técnica em Edições (`IMAGE_EDIT`)
+
+Localizado em [`image_service.py`](file:///home/jean/langchain-orchestrator/image_service.py), resolve o roteamento de alterações em imagens previamente geradas:
+
+1. **Prioridade Absoluta ao Modelo Solicitado:**
+   - Se o prompt do usuário cita explicitamente um modelo ou provedor (ex.: *"Utilize o modelo da OpenAI GPT-2.5-Sunburst"* ou *"Use o FLUX"*), o orquestrador detecta a preferência via `detect_requested_model_in_prompt()` e encaminha diretamente para o motor indicado.
+2. **Preferência pelo Modelo Criador Original:**
+   - Ao solicitar uma alteração de post ou arte existente, o orquestrador inspeciona o histórico de mensagens via `detect_image_context_from_history()`.
+   - Se a imagem foi originalmente concebida pelo **OpenAI `gpt-image-2.5-sunburst`**, esse modelo é preferido para a edição subsequente, preservando estilo, iluminação e identidade dos sujeitos.
+3. **Priorização por Vantagem Técnica (Tipografia & Texto em Português):**
+   - O modelo **OpenAI (`gpt-image-2.5-sunburst`)** possui clara vantagem técnica sobre outros motores para renderização de caracteres acentuados, substituição de palavras e remoção cirúrgica de textos.
+   - Portanto, em solicitações de ajuste de frase, substituição ou remoção textual, a OpenAI é automaticamente priorizada na esteira de edição.
+4. **Restauração Instantânea de Foto Limpa:**
+   - Quando o usuário pede *"tire tudo que estiver escrito / deixe só a foto"* em uma arte montada via Pillow (`composed_...`), o orquestrador recupera instantaneamente a fotografia original limpa do disco com latência mínima e zero degradação por IA.
+
+---
+
+### 4.3. Guardrail de Intenção Genérica
 
 Localizado em [`social_service.py`](file:///home/jean/langchain-orchestrator/social_service.py), avalia pedidos excessivamente curtos ou vagos (ex.: *"faça um post para mim"* sem anexo nem menção ao tema).
 - Em vez de gerar conteúdo alucinado ou genérico, o guardrail **bloqueia o pipeline** e responde orientando o usuário sobre como fornecer o tema e escolher entre os modos:
@@ -222,6 +248,18 @@ Localizado em [`episodic_memory_service.py`](file:///home/jean/langchain-orchest
 
 ---
 
+### 4.6. Conversor de Markdown para PDF Formatado (PDF_EXPORT)
+
+Localizado em [`pdf_export_service.py`](file:///home/jean/langchain-orchestrator/pdf_export_service.py):
+- Converte textos ricos em Markdown diretamente para documentos PDF no padrão A4 com diagramação editorial executiva (fontes modernas, tabelas zebradas, blocos de citação com bordas acentuadas, cabeçalhos correndo e paginação `Página X de Y`).
+- **Guardrail Anti-DOCUMENT_RAG**: Impede que pedidos de exportação de PDF (ex.: *"Gere um PDF desse resumo"*, *"Converta o texto anterior em PDF"*) caiam na busca de documentos internos existentes (`DOCUMENT_RAG`) ou no terminal de arquivos (`MCP_FILESYSTEM`).
+- **Modos de Operação**:
+  1. *Follow-up conversacional*: O usuário pede um resumo ou análise e, em seguida, solicita a exportação em PDF. O orquestrador recupera o Markdown da última resposta do assistente e gera o arquivo instantaneamente.
+  2. *Anexo direto no prompt*: Quando o prompt solicita tanto a geração do conteúdo quanto o PDF (ex.: *"Faça um resumo sobre X e anexe em PDF"*), o pipeline gera a resposta e anexa o card de download ao final.
+  3. *LibreChat Action / Skill*: Endpoint publicado em `/v1/skills/export/markdown-to-pdf` compatível com especificações OpenAPI 3.1.
+
+---
+
 ## 5. Resumo dos Limiares e Constantes do Sistema
 
 | Componente | Parâmetro | Valor | Arquivo de Origem |
@@ -234,3 +272,4 @@ Localizado em [`episodic_memory_service.py`](file:///home/jean/langchain-orchest
 | **Limiar de Memória Episódica** | `min_score` | `0.55` | `main.py` |
 | **Timeout Classificador JSON** | `timeout` | `8.0s` | `semantic_router_service.py` |
 | **Temperatura do Classificador**| `temperature` | `0.0` | `semantic_router_service.py` |
+| **Motor de Renderização PDF** | WeasyPrint + Cairo/Pango | Padrão A4 | `pdf_export_service.py` |

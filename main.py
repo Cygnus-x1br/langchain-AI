@@ -74,6 +74,12 @@ from agent_service import execute_agent_flow, execute_rag_flow, weather_tool, ta
 from image_service import execute_image_flow
 from social_service import execute_social_post_flow, extract_all_images
 from data_export_service import execute_data_export_flow
+from pdf_export_service import (
+    convert_markdown_to_pdf,
+    is_pdf_export_request,
+    prompt_wants_pdf_attachment,
+    format_pdf_markdown_card
+)
 from video_service import execute_short_video_flow
 from mcp_filesystem_service import execute_mcp_filesystem_flow
 from mcp_fetch_service import execute_mcp_fetch_flow
@@ -795,8 +801,14 @@ async def execute_candidates_pipeline(
                                             }
                                             yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
 
+                                    wants_pdf_attach = prompt_wants_pdf_attachment(user_prompt)
                                     async for chunk in resp.aiter_bytes():
-                                        yield chunk
+                                        if wants_pdf_attach and b"data: [DONE]" in chunk:
+                                            filtered_chunk = chunk.replace(b"data: [DONE]\n\n", b"").replace(b"data: [DONE]", b"")
+                                            if filtered_chunk:
+                                                yield filtered_chunk
+                                        else:
+                                            yield chunk
                                         accumulated_chunks.append(chunk)
                                     success = True
                                     break
@@ -835,6 +847,27 @@ async def execute_candidates_pipeline(
                             store_in_cache(cache_lookup_key, accumulated_text, category, log_entry.get("target_model"))
                 except Exception as cache_err:
                     print(f"[Aviso Gravação Cache Stream]: {cache_err}")
+
+                # Anexo PDF automático caso solicitado no prompt
+                if prompt_wants_pdf_attachment(user_prompt) and accumulated_text:
+                    try:
+                        title_match = re.search(r"^#\s+(.+)$", accumulated_text, re.MULTILINE)
+                        extracted_title = title_match.group(1).strip() if title_match else "Documento"
+                        pdf_res = convert_markdown_to_pdf(accumulated_text, title=extracted_title, prefix="doc")
+                        if pdf_res.get("status") == "success" or pdf_res.get("success"):
+                            pdf_card = "\n\n" + format_pdf_markdown_card(pdf_res)
+                            chunk_pdf = {
+                                "id": f"chatcmpl-pdf-{int(time.time())}",
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": log_entry.get("target_model", "DocumentOrchestrator"),
+                                "choices": [{"index": 0, "delta": {"content": pdf_card}, "finish_reason": None}]
+                            }
+                            yield f"data: {json.dumps(chunk_pdf)}\n\n".encode("utf-8")
+                            yield b"data: [DONE]\n\n"
+                    except Exception as pdf_stream_err:
+                        print(f"[Aviso PDF Attachment Stream]: {pdf_stream_err}")
+                        yield b"data: [DONE]\n\n"
 
                 # Atualiza memória de sessão conversacional
                 if conversation_id:
@@ -936,6 +969,18 @@ async def execute_candidates_pipeline(
                                 pass
 
                     if ans_text:
+                        # Anexo PDF automático caso solicitado no prompt
+                        if prompt_wants_pdf_attachment(user_prompt):
+                            try:
+                                title_match = re.search(r"^#\s+(.+)$", ans_text, re.MULTILINE)
+                                extracted_title = title_match.group(1).strip() if title_match else "Documento"
+                                pdf_res = convert_markdown_to_pdf(ans_text, title=extracted_title, prefix="doc")
+                                if pdf_res.get("status") == "success" or pdf_res.get("success"):
+                                    ans_text = ans_text + "\n\n" + format_pdf_markdown_card(pdf_res)
+                                    resp_json["choices"][0]["message"]["content"] = ans_text
+                            except Exception as pdf_json_err:
+                                print(f"[Aviso PDF Attachment JSON]: {pdf_json_err}")
+
                         if category == "CODING" and not is_code_response_complete(ans_text):
                             print(f"[Aviso Cache Coding] Resposta de código parece incompleta (tamanho: {len(ans_text)} chars). Gravação em cache ignorada.")
                         else:
@@ -1466,6 +1511,11 @@ async def chat_completions(request: Request):
             "agent-data", "data-export", "export-excel", "chart-generator", "bi-chart"
         ]
     )
+    is_dedicated_pdf_alias = any(
+        k in req_model.lower() for k in [
+            "agent-pdf", "markdown-to-pdf", "pdf-export", "export-pdf", "skill-pdf"
+        ]
+    )
     rewritten_prompt = None
     if is_dedicated_coding_alias:
         category = "CODING"
@@ -1477,6 +1527,10 @@ async def chat_completions(request: Request):
         raw_classifier_output = f"Direct alias: {req_model}"
     elif is_dedicated_export_alias:
         category = "DATA_EXPORT_CHART"
+        routing_method = "direct_model_alias"
+        raw_classifier_output = f"Direct alias: {req_model}"
+    elif is_dedicated_pdf_alias:
+        category = "PDF_EXPORT"
         routing_method = "direct_model_alias"
         raw_classifier_output = f"Direct alias: {req_model}"
     else:
@@ -1563,7 +1617,7 @@ async def chat_completions(request: Request):
         cache_lookup_key = f"[Ctx: {asst_snip}] {user_prompt}"
 
     cached_hit = None
-    if category not in ["IMAGE_GENERATION", "IMAGE_EDIT", "SOCIAL_MEDIA_POST", "DATA_EXPORT_CHART", "SHORT_VIDEO"]:
+    if category not in ["IMAGE_GENERATION", "IMAGE_EDIT", "SOCIAL_MEDIA_POST", "DATA_EXPORT_CHART", "SHORT_VIDEO", "PDF_EXPORT"]:
         cached_hit = await lookup_cache(cache_lookup_key, category=category, is_followup=is_followup)
 
     if cached_hit:
@@ -1953,6 +2007,134 @@ async def chat_completions(request: Request):
                 "object": "chat.completion",
                 "created": int(time.time()),
                 "model": "SocialMediaOrchestrator",
+                "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+            })
+
+    # ---------------------------------------------------------
+    # ROTA ESPECIAL 0.55: Conversor de Markdown para PDF Formatado
+    # ---------------------------------------------------------
+    if category == "PDF_EXPORT":
+        print(f"[Orquestrador] Executando Fluxo de Exportação para PDF ({category})...")
+        log_entry["target_destination"] = "pdf_export_executor"
+        log_entry["target_model"] = "MarkdownPdfOrchestrator"
+
+        target_md = ""
+        # 1. Se o próprio prompt contiver bloco markdown (```...```) com tamanho razoável (>40 chars)
+        code_blocks = re.findall(r"```(?:markdown)?\s*\n([\s\S]*?)```", user_prompt, re.IGNORECASE)
+        if code_blocks and len(code_blocks[0].strip()) > 40:
+            target_md = code_blocks[0].strip()
+
+        # 2. Se for follow-up ou solicitação de exportar texto/resumo anterior da conversa
+        if not target_md and messages and len(messages) > 1:
+            for m in reversed(messages[:-1]):
+                if m.get("role") == "assistant" and isinstance(m.get("content"), str) and len(m.get("content").strip()) > 30:
+                    target_md = m.get("content").strip()
+                    break
+
+        # 3. Se ainda não encontrou, verifica se veio em mensagem anterior do usuário
+        if not target_md and messages and len(messages) > 1:
+            for m in reversed(messages[:-1]):
+                if m.get("role") == "user" and isinstance(m.get("content"), str) and len(m.get("content").strip()) > 80:
+                    target_md = m.get("content").strip()
+                    break
+
+        # 4. Fallback: Se o usuário colocou o texto diretamente no prompt após comando de exportação
+        if not target_md and len(user_prompt) > 80:
+            cleaned = re.sub(
+                r'^(?:gere|converta|crie|exporte|faça|transforme)?\s*(?:um\s+)?pdf\s*(?:deste|desse|do|deste\s+texto|desse\s+texto|seguinte\s+texto|a\s+seguir)?:?\s*',
+                '',
+                user_prompt,
+                flags=re.IGNORECASE
+            ).strip()
+            if len(cleaned) > 40:
+                target_md = cleaned
+
+        if not target_md:
+            output_text = (
+                "⚠️ **Nenhum conteúdo para exportação encontrado**\n\n"
+                "Não encontrei um resumo ou texto anterior na conversa para converter em PDF.\n\n"
+                "Para gerar um PDF formatado:\n"
+                "- Solicite um resumo ou explicação primeiro e depois peça *'Gere um PDF desse resumo'*; ou\n"
+                "- Envie o texto desejado em Markdown (ou delimitado por ```markdown ... ```) solicitando a conversão."
+            )
+        else:
+            # Tenta extrair título do markdown (ex: # Título)
+            extracted_title = ""
+            title_match = re.search(r"^#\s+(.+)$", target_md, re.MULTILINE)
+            if title_match:
+                extracted_title = title_match.group(1).strip()
+            else:
+                first_line = next((l.strip() for l in target_md.splitlines() if l.strip()), "")
+                if first_line and len(first_line) < 80:
+                    extracted_title = re.sub(r'^[#*_\-\s]+', '', first_line).strip()
+                else:
+                    extracted_title = "Documento"
+
+            pdf_res = convert_markdown_to_pdf(
+                markdown_text=target_md,
+                title=extracted_title,
+                prefix="doc"
+            )
+            if pdf_res.get("status") == "success" or pdf_res.get("success"):
+                output_text = format_pdf_markdown_card(pdf_res)
+            else:
+                output_text = f"❌ Ocorreu um erro ao gerar o PDF formatado: {pdf_res.get('error', 'Falha desconhecida')}"
+
+        log_entry["status"] = "success"
+        log_entry["response_preview"] = output_text[:250]
+        log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+        write_log(log_entry)
+
+        update_conversation_state(
+            conversation_id=conversation_id,
+            category=category,
+            target_model="MarkdownPdfOrchestrator",
+            prompt=user_prompt,
+            assistant_snippet=output_text[:300]
+        )
+
+        debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+        if stream:
+            async def pdf_export_stream():
+                if debug_reasoning:
+                    chunk_dbg = {
+                        "id": f"chatcmpl-pdf-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "MarkdownPdfOrchestrator",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+
+                chunk_resp = {
+                    "id": f"chatcmpl-pdf-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MarkdownPdfOrchestrator",
+                    "choices": [{"index": 0, "delta": {"content": output_text}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                done_resp = {
+                    "id": f"chatcmpl-pdf-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "MarkdownPdfOrchestrator",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(pdf_export_stream(), media_type="text/event-stream")
+        else:
+            msg_payload = {"role": "assistant", "content": output_text}
+            if debug_reasoning:
+                msg_payload["reasoning_content"] = debug_reasoning
+            return JSONResponse(content={
+                "id": f"chatcmpl-pdf-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "MarkdownPdfOrchestrator",
                 "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
             })
 

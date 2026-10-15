@@ -903,34 +903,52 @@ Responda SOMENTE em JSON válido:
         composed_filename = f"composed_{filename}"
         local_output_path = os.path.join(IMAGE_STORAGE_DIR, composed_filename)
         
-        # Prioridade máxima para as frases solicitadas pelo usuário entre aspas
-        if exact_headline:
+        # Prioridade máxima para as frases solicitadas pelo usuário
+        from phrase_extractor_guardrail import extract_phrase_intent, is_no_text_intent, is_instruction_command
+        phrase_intent = extract_phrase_intent(user_prompt)
+
+        if phrase_intent.get("remove_all_text") or is_no_text_intent(user_prompt):
+            headline = ""
+            subhead = ""
+        elif exact_headline:
             headline = exact_headline
             subhead = exact_subhead or ""
+        elif phrase_intent.get("headline"):
+            headline = phrase_intent["headline"]
+            subhead = phrase_intent.get("subhead") or ""
         else:
-            # Limpa emojis e extrai título principal do hook
-            headline_raw = post.get("hook", "").split("\n")[0].strip()
-            headline = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', headline_raw).strip()
-            subhead_raw = post.get("call_to_action", "").split("\n")[0].strip()
-            subhead = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', subhead_raw).strip()
+            # Se não há texto explícito solicitado pelo usuário ou é comando imperativo ("faça uma montagem"), mantém limpo
+            if is_instruction_command(user_prompt) or not phrase_intent.get("has_explicit_text"):
+                headline = ""
+                subhead = ""
+            else:
+                # Postagens corporativas/editoriais onde o usuário não pediu imagem limpa
+                headline_raw = post.get("hook", "").split("\n")[0].strip()
+                headline = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', headline_raw).strip()
+                subhead_raw = post.get("call_to_action", "").split("\n")[0].strip()
+                subhead = re.sub(r'[^\w\s,\.\!\?áéíóúãõâêîôûçÀ-Ú]', '', subhead_raw).strip()
         
-        t0_comp = time.time()
-        print(f"[Social Flow] Iniciando composição visual em {local_input_path} (Headline: '{headline}', Subhead: '{subhead}')...")
-        success_comp = compose_image(local_input_path, local_output_path, headline, subhead, spec)
-        
-        if success_comp:
-            sync_image_to_librechat(local_output_path)
-            public_img_url = f"{SERVER_PUBLIC_URL}/{composed_filename}?t={int(time.time())}"
-            img_model = f"Composed_{img_model}"
-            img_provider = f"{img_provider} + Pillow"
-            tools_called.append({
-                "action": "social_image_composition",
-                "status": "success",
-                "duration_seconds": round(time.time() - t0_comp, 2)
-            })
-            print(f"[Social Flow] Composição visual concluída com sucesso: {public_img_url}")
+        # Só realiza composição gráfica com Pillow se houver texto real a ser aplicado
+        if headline or subhead:
+            t0_comp = time.time()
+            print(f"[Social Flow] Iniciando composição visual em {local_input_path} (Headline: '{headline}', Subhead: '{subhead}')...")
+            success_comp = compose_image(local_input_path, local_output_path, headline, subhead, spec)
+            
+            if success_comp:
+                sync_image_to_librechat(local_output_path)
+                public_img_url = f"{SERVER_PUBLIC_URL}/{composed_filename}?t={int(time.time())}"
+                img_model = f"Composed_{img_model}"
+                img_provider = f"{img_provider} + Pillow"
+                tools_called.append({
+                    "action": "social_image_composition",
+                    "status": "success",
+                    "duration_seconds": round(time.time() - t0_comp, 2)
+                })
+                print(f"[Social Flow] Composição visual concluída com sucesso: {public_img_url}")
+            else:
+                print("[Social Flow] Falha na composição visual. Usando imagem original.")
         else:
-            print("[Social Flow] Falha na composição visual. Usando imagem original.")
+            print("[Social Flow] Nenhuma frase/texto solicitada para sobreposição visual. Mantendo imagem limpa e autêntica.")
 
     # 5. Apresentação
     total_duration = round(time.time() - start_time, 2)

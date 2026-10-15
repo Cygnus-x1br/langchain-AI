@@ -27,25 +27,31 @@ async def generate_smart_caption(
     headline: str,
     subhead: str = ""
 ) -> str:
-    """Gera legenda dinâmica e altamente engajadora baseada no briefing real do post."""
-    from langchain_openai import ChatOpenAI
-    from config import LITELLM_BASE_URL, LITELLM_API_KEY
-    
+    domain_hint = briefing.get('domain')
+    if not domain_hint or domain_hint == 'Geral':
+        if any(k in user_prompt.lower() for k in ['filho', 'filha', 'filhos', 'família', 'familia', 'amor', 'amores', 'criança', 'irmão']):
+            domain_hint = 'Família / Afeto / Filhos'
+        else:
+            domain_hint = 'Geral / Criativo'
+
+    headline_line = f"- TÍTULO/DESTAQUE OBRIGATÓRIO: '{headline}'" if headline else "- TÍTULO/DESTAQUE: Não há título na imagem. Escreva uma copy acolhedora, espontânea e cativante condizente com o tema."
+    hook_rule = f"1. Comece com um emoji e um gancho (Hook) forte contendo o título '{headline}'." if headline else "1. Comece com um emoji e um gancho (Hook) emocionante e afetuoso condizente com o tema."
+
     prompt = f"""Você é um copywriter de redes sociais de alta performance.
 Escreva uma legenda completa para uma publicação no {spec['label']}.
 
 DADOS DA PUBLICAÇÃO:
-- TÍTULO/DESTAQUE OBRIGATÓRIO: {headline or 'Conquista'}
-- SUBTÍTULO/COLOCAÇÃO/DETALHE: {subhead or ''}
+{headline_line}
+- SUBTÍTULO/DETALHE: {subhead or ''}
 - PEDIDO DO USUÁRIO: {user_prompt}
-- DOMÍNIO: {briefing.get('domain', 'Esportes / Conquistas')}
-- TOM: {briefing.get('tone', spec.get('tone', 'Inspirador e comemorativo'))}
+- DOMÍNIO: {domain_hint}
+- TOM: {briefing.get('tone', spec.get('tone', 'Emocionante, inspirador e acolhedor'))}
 
 DIRETRIZES DA LEGENDA:
-1. Comece com um emoji e um gancho (Hook) forte contendo o título '{headline}'.
-2. Destaque no corpo a conquista, citando o resultado '{subhead}' com entusiasmo autêntico.
+{hook_rule}
+2. Destaque no corpo a emoção do momento com autenticidade. NÃO mencione esportes, natação ou troféus a menos que o pedido seja explicitamente sobre esportes!
 3. Adicione uma chamada para ação (CTA) envolvente para os seguidores comentarem.
-4. Finalize com 5 a 8 hashtags estratégicas relevantes para o tema e plataforma.
+4. Finalize com 5 a 8 hashtags estratégicas relevantes para o tema real e plataforma.
 5. NÃO invente nomes de escolas ou marcas que não foram informadas.
 
 Retorne APENAS o texto da legenda formatado, pronto para copiar e colar."""
@@ -59,13 +65,14 @@ Retorne APENAS o texto da legenda formatado, pronto para copiar e colar."""
     except Exception as e:
         print(f"[Smart Mode] Erro ao gerar legenda com LLM: {e}")
 
-    sub_line = f"\n🥈 {subhead}" if subhead else ""
+    sub_line = f"\n💖 {subhead}" if subhead else ""
+    title_line = f"✨ {headline}!" if headline else "✨ Momentos especiais para a vida inteira!"
     return (
-        f"🏆 {headline}!\n{sub_line}\n\n"
-        f"Dedicação, treino e foco levam a grandes resultados! Parabéns por essa conquista incrível e inspiradora.\n\n"
-        f"👉 Deixe seu comentário celebrando esse momento!\n\n"
+        f"{title_line}\n{sub_line}\n\n"
+        f"Registros especiais cheios de amor, cumplicidade e carinho. Guardando cada detalhe no coração!\n\n"
+        f"👉 Deixe seu carinho nos comentários!\n\n"
         f".\n.\n"
-        f"#{platform_key.lower()} #conquista #superacao #esporte"
+        f"#{platform_key.lower()} #familia #amor #momentos #especial"
     )
 
 
@@ -92,33 +99,53 @@ async def execute_smart_mode(
     domain = briefing.get("domain", "Geral")
     tone = briefing.get("tone", "Profissional e Esportivo")
     
-    headline = exact_headline or briefing.get("must_include_text") or ""
-    subhead = exact_subhead or briefing.get("subhead_text") or ""
-    
-    # Se ainda estiver vazio ou for uma instrução de comando ("Refaça...", "Crie..."), limpa
-    if not headline or any(cmd in headline.lower() for cmd in ["refaça", "crie um", "fazer um", "post acima"]):
-        quotes = re.findall(r'["“"\'«]([^"”"\'»\n]{2,80})["”"\'»]', user_prompt)
-        if quotes:
-            headline = quotes[0]
-            subhead = quotes[1] if len(quotes) > 1 else subhead
-        else:
-            headline = briefing.get("topic_summary", "")[:40]
+    from phrase_extractor_guardrail import extract_phrase_intent, is_instruction_command, is_no_text_intent
+
+    phrase_intent = extract_phrase_intent(user_prompt)
+    if phrase_intent.get("remove_all_text") or is_no_text_intent(user_prompt):
+        headline = ""
+        subhead = ""
+    elif phrase_intent.get("headline"):
+        headline = phrase_intent["headline"]
+        subhead = phrase_intent.get("subhead") or ""
+    else:
+        headline = exact_headline or briefing.get("must_include_text") or ""
+        subhead = exact_subhead or briefing.get("subhead_text") or ""
+
+    # Se a frase parecer uma instrução para o robô (ex: "faça uma montagem", "quero postar"), limpa sumariamente
+    if headline and is_instruction_command(headline):
+        print(f"[Smart Mode] Descartando headline que era apenas instrução do prompt: '{headline}'")
+        headline = ""
+    if subhead and is_instruction_command(subhead):
+        print(f"[Smart Mode] Descartando subhead que era apenas instrução do prompt: '{subhead}'")
+        subhead = ""
 
     palette = briefing.get("palette") or ["#0055A5", "#00A859"]
     palette_str = ", ".join(palette) if isinstance(palette, list) else str(palette)
     visual_elements = ", ".join(briefing.get("visual_elements") or [])
+
+    # Limpa instruções imperativas para não vazar comandos como texto de design
+    clean_user_design_req = re.sub(r'^(?:faça|fazer|monte|montar|crie|criar|gere|gerar|produza)\s+(?:um[a]?\s+)?(?:post|postagem|arte|montagem|foto|imagem|design)\s*(?:de|dos?|das?)?\s*', '', user_prompt, flags=re.IGNORECASE).strip()
     
     # Construção do Megaprompt profissional de composição para o GPT Image
     prompt_lines = [
         f"Create an eye-catching, professional {spec['label']} social media poster graphic (aspect ratio {spec['aspect_ratio']}).",
-        f"Theme / Domain: {domain}. Visual Tone: {tone}.",
-        f"Design Instructions from user: {user_prompt[:250]}.",
-        f"Background style & Colors: Incorporate {palette_str} background gradients, modern geometric curves and textures.",
+        f"Theme / Domain: {domain}. Visual Tone: {tone}."
     ]
+    if clean_user_design_req:
+        prompt_lines.append(f"Visual Theme Details: {clean_user_design_req[:200]}.")
+    prompt_lines.append(f"Background style & Colors: Incorporate {palette_str} background gradients, modern geometric curves and textures.")
+
     if headline:
         prompt_lines.append(f"Graphic Typography & Main Title Overlay: Prominently feature and render clearly the text: '{headline}'.")
-    if subhead:
-        prompt_lines.append(f"Graphic Typography Subtitle (at bottom): Feature cleanly and visibly: '{subhead}'.")
+        if subhead:
+            prompt_lines.append(f"Graphic Typography Subtitle (at bottom): Feature cleanly and visibly: '{subhead}'.")
+    else:
+        prompt_lines.append(
+            "CLEAN GRAPHIC COMPOSITION: Do NOT render any text, words, phrases, captions, or typography on this image. "
+            "Keep the visual artwork, photographic subjects, and background completely clean with NO text overlay."
+        )
+
     if visual_elements:
         prompt_lines.append(f"Visual details: Incorporate {visual_elements}.")
     

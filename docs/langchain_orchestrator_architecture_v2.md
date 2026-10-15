@@ -848,3 +848,58 @@ Implementado o módulo dedicado `video_service.py` e integrado ao pipeline orque
    - Retorno imediato no chat com **Player HTML5 `<video>` embutido**, link de download direto em MP4, roteiro detalhado e descrição das cenas.
    - Rota dedicada de API: `POST /v1/video/short` e roteamento semântico automático via `/v1/chat/completions`.
 
+---
+
+### 🟣 PRIORIDADE 13: Suíte de Ferramentas MCP (Model Context Protocol) & Sandbox de Workspace (CONCLUÍDO ✅)
+
+Implementação de agentes e ferramentas utilitárias no orquestrador baseadas no padrão MCP, operando em sandbox isolada (`/app/workspace`):
+1. **MCP Filesystem (`mcp_filesystem_service.py`):** Leitura, escrita, listagem e edição de arquivos locais no workspace de desenvolvimento.
+2. **MCP Fetch (`mcp_fetch_service.py`):** Extração limpa e leitura de páginas web e artigos via URL direta informada pelo usuário.
+3. **MCP Git (`mcp_git_service.py`):** Execução de rotinas de versionamento no repositório do workspace (`git status`, `git diff`, `git log`, `git commit`, `git branch`).
+4. **MCP Brave Search (`mcp_brave_search_service.py`):** Busca web independente e privada via Brave Search API.
+5. **MCP Database (`mcp_database_service.py`):** Inspeção de esquemas e execução analítica de consultas SQL sobre bases SQLite e DuckDB.
+6. **MCP Code Runner (`mcp_code_runner_service.py`):** Execução segura de scripts Python inline e rotinas Bash no container, capturando saídas de terminal stdout/stderr.
+
+---
+
+### 🟣 PRIORIDADE 14: Endpoints Dedicados para IDEs (OpenCode, Cline, Continue, VS Code) e Multi-Tier de Código (CONCLUÍDO ✅)
+
+Criação de rotas dedicadas de desenvolvimento de software em `main.py` e `coding_service.py`:
+1. **Endpoints de Conexão:**
+   - `POST /v1/coding/completions` (e alias `POST /v1/opencode/completions`)
+   - `POST /v1/coding/fast` (Tier 1: Qwen 2.5 Coder 32B / Ollama local para scripts rápidos e edições diretas)
+   - `POST /v1/coding/exec` (Tier 2: DeepSeek V3 671B MoE para implementação de módulos e refatoração)
+   - `POST /v1/coding/plan` (Tier 3: DeepSeek R1 / o3-mini para raciocínio analítico, planejamento e arquitetura)
+2. **Descoberta de Modelos (`GET /v1/models`):** Lista modelos compatíveis com o padrão OpenAI (`agent-coding`, `opencode`, `agent-coding-fast`, etc.).
+3. **Guardrails de Código:** Validação de integridade de código, rejeição de respostas truncadas e injeção de diretrizes de código limpo sem placeholders.
+
+---
+
+### 🟣 PRIORIDADE 15: Social Media Studio v3 & Composição Multimodal com GPT-2.5-sunburst (CONCLUÍDO ✅)
+
+Aprimoramento do fluxo de criação e revisão de posts para redes sociais (`social_service.py`, `social_mode_smart.py`, `phrase_extractor_guardrail.py`):
+1. **Preferência de Modelo em Revisões:** Quando o usuário solicita alteração de uma imagem ou post já gerado, o orquestrador preserva a continuidade visual redirecionando a edição para o modelo multimodal de referência que originou a arte (GPT-2.5-sunburst).
+2. **Guardrail de Extração de Frases (`phrase_extractor_guardrail.py`):** Identifica e extrai estritamente frases explicitamente solicitadas pelo usuário (entre aspas ou comandos diretos), rejeitando instruções procedurais, textos inteiros do prompt ou alucinações.
+3. **Composição Visual Dupla:** Suporte à geração de postagens com múltiplas imagens e carrosséis com legendas alinhadas à identidade visual.
+
+---
+
+### 🟣 PRIORIDADE 16: Conversor de Markdown para PDF Formatado com Diagramação A4 (CONCLUÍDO ✅)
+
+Implementação do serviço `pdf_export_service.py` integrado à categoria 21 `PDF_EXPORT`:
+1. **Motor WeasyPrint 70 + Cairo/Pango:** Converte Markdown em HTML semântico renderizado em folha A4 com tipografia moderna, tabelas zebradas, caixas de citação com bordas azuis acentuadas e paginação dinâmica (`Página X de Y`).
+2. **Follow-up Conversacional:** Se o usuário solicita um resumo e na sequência pede *"Gere um PDF desse resumo"*, o orquestrador extrai a resposta do assistente anterior e compila o PDF em ~0.15s.
+3. **Anexo Direto no Prompt:** Comandos como *"Faça um resumo de X e anexe em PDF"* geram a explicação e anexam o card de download diretamente ao final da mensagem.
+4. **Endpoint OpenAPI / Skill:** Publicado em `POST /v1/skills/export/markdown-to-pdf`.
+
+---
+
+### 🟣 PRIORIDADE 17: Roteador Semântico Vetorial V2 com Qdrant Cosine Similarity & Fallback JSON (CONCLUÍDO ✅)
+
+Desenvolvimento de `semantic_router_service.py` como motor oficial de classificação:
+1. **Camada 0 (Fast-Pass 0ms):** Avaliação instantânea por regras regex para clima, indicadores financeiros, planilhas e exportação de PDF.
+2. **Camada 1 (Vetor Qdrant 5-15ms):** Embedding da consulta contra sementes canônicas das 21 categorias com limiar de cosseno $\ge 0.78$.
+3. **Camada 2 (Fallback Estruturado LLM):** Invocação de modelo leve com `response_format: {"type": "json_object"}` estrito, eliminando truncamento de tokens e alucinações.
+4. **Topic Shift Guardrail:** Detecta quebras de assunto (ex.: mudança de rede social para programação) e isola o contexto histórico antigo.
+
+

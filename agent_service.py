@@ -684,7 +684,13 @@ async def execute_rag_flow(user_prompt: str, context_prompt: str = "", user_id: 
     # Fallback Transparente para Web Search:
     # Se a base vetorial não possuir documentos com confiança (top_score < rag_fallback_web_thresh) ou for vazia,
     # não force resposta alucinatória nem responda 'não tenho dados'. Recorra à busca na Web!
-    explicit_file_query = any(k in user_prompt.lower() for k in ["pdf", "anexo", "meu documento", "meus arquivos", "no manual", "no livro que enviei"])
+    explicit_file_query = any(
+        k in user_prompt.lower() for k in [
+            "pdf", "anexo", "meu documento", "meus arquivos", "no manual", "no livro que enviei",
+            "sistema", "funcionalidades", "funcionalidade", "opencode", "cline", "continue", "cursor",
+            "librechat", "orquestrador", "manual"
+        ]
+    ) or any("manual_do_sistema" in str(r.get("metadata", {}).get("source", "")) for r in rag_results)
     if (confidence_level in ["LOW", "MEDIUM"] and top_score < rag_fallback_web_thresh and not explicit_file_query) or not rag_results:
         print(f"[RAG Fallback Ativado] Relevância da base local insuficiente (score: {top_score:.4f}). Consultando fontes atualizadas na Web...")
         web_text, web_tools = await execute_agent_flow(

@@ -41,6 +41,14 @@ def quick_rule_classifier(prompt: str) -> Optional[str]:
     """Verificação ultrarrápida por regras com Regex (0ms)."""
     p = prompt.lower()
     
+    # 0. Conversão e Exportação para PDF (Prioridade sobre RAG)
+    try:
+        from pdf_export_service import is_pdf_export_request
+        if is_pdf_export_request(prompt):
+            return "PDF_EXPORT"
+    except Exception:
+        pass
+
     # RAG / Documentos Internos / Memória Temporária de Livros/Textos
     rag_pattern = (
         r"(segundo\s+(meus|os|esse|este)\s+documentos?"
@@ -53,7 +61,18 @@ def quick_rule_classifier(prompt: str) -> Optional[str]:
         r"|sobre\s+o\s+texto|no\s+texto"
         r"|que\s+(te\s+)?(mandei|enviei|anexei|subi)"
         r"|attached\s+document\(s\)"
-        r"|texto\s+(enviado|anexo|acima))"
+        r"|texto\s+(enviado|anexo|acima)"
+        r"|\b(o\s+que\s+(eu\s+)?posso\s+fazer\s+n(esse|este)\s+sistema"
+        r"|o\s+que\s+posso\s+fazer\s+aqui"
+        r"|quais\s+(as\s+|s[aã]o\s+as\s+)?funcionalidades\s+(d[oe]|deste|desse|neste|nesse)\s+sistema"
+        r"|funcionalidades\s+dispon[ií]veis\s+(no|neste|nesse)\s+(sistema|chat|librechat)"
+        r"|o\s+que\s+(o\s+)?(sistema|chat|librechat|orquestrador)\s+(faz|sabe\s+fazer|pode\s+fazer|oferece)"
+        r"|como\s+(funciona|usar)\s+(o\s+)?(sistema|librechat|orquestrador)"
+        r"|qual\s+(o\s+)?endpoint\s+.*(opencode|cline|continue|cursor|vscode)"
+        r"|conectar\s+(o\s+)?opencode\s+ao\s+sistema"
+        r"|configura[cç][aã]o\s+d[oe]\s+(opencode|cline|continue|cursor)\s+no\s+sistema"
+        r"|como\s+(fa[çc]o\s+a\s+|fazer\s+a\s+)?configura[cç][aã]o\s+d[oe]\s+opencode"
+        r"|como\s+configurar\s+o\s+opencode)\b)"
     )
     if re.search(rag_pattern, p):
         return "DOCUMENT_RAG"
@@ -516,9 +535,22 @@ async def classify_intent_v1(
             routing_method = "llm_error_default_fallback"
             print(f"[Aviso] Classificador LLM indisponível. Usando fallback padrão: {category}.")
 
+    # Guardrail para pedidos de PDF: exportação ou geração em PDF NUNCA deve cair em DOCUMENT_RAG
+    if category == "DOCUMENT_RAG":
+        try:
+            from pdf_export_service import is_pdf_export_request, prompt_wants_pdf_attachment
+            if is_pdf_export_request(user_prompt):
+                print("[Guardrail Classificador] Redirecionando de DOCUMENT_RAG para PDF_EXPORT.")
+                category = "PDF_EXPORT"
+            elif prompt_wants_pdf_attachment(user_prompt):
+                category = last_category if (last_category and last_category != "DOCUMENT_RAG") else "FACTUAL_GENERAL"
+                print(f"[Guardrail Classificador] Prompt pede PDF de conteúdo. Ajustando rota de DOCUMENT_RAG para {category}.")
+        except Exception:
+            pass
+
     # Guardrail adicional: Se o modelo identificou follow-up, mas a categoria anterior era FACTUAL_GENERAL e o usuário não pediu código/análise de arquivo
     if (is_followup or llm_followup_detected) and last_category == "FACTUAL_GENERAL" and category == "DOCUMENT_RAG":
-        has_file_mention = any(k in user_prompt.lower() for k in ["pdf", "arquivo", "documento", "manual", "anexo", "texto enviado"])
+        has_file_mention = any(k in user_prompt.lower() for k in ["arquivo interno", "documento interno", "manual técnico", "anexo que enviei", "texto que subi"])
         if not has_file_mention:
             print(f"[Guardrail Classificador] Bloqueando desvio para DOCUMENT_RAG em continuidade de FACTUAL_GENERAL.")
             category = "FACTUAL_GENERAL"

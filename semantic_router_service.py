@@ -176,7 +176,21 @@ CANONICAL_SEEDS: Dict[str, List[str]] = {
         "segundo o manual em formato pdf que enviei qual o procedimento de segurança",
         "de acordo com o relatório corporativo em anexo quais foram as metas atingidas",
         "consulte o documento anexado acima e responda a minha dúvida sobre as regras",
-        "no pdf do livro que carreguei o que o autor diz no capítulo 3"
+        "no pdf do livro que carreguei o que o autor diz no capítulo 3",
+        "o que posso fazer nesse sistema e quais as funcionalidades disponíveis",
+        "o que este chat sabe fazer e quais ferramentas estão disponíveis",
+        "quais as funcionalidades disponíveis no sistema do librechat",
+        "qual o endpoint para conectar o opencode ao sistema e como faço a configuração",
+        "como conectar o opencode cline continue ou cursor ao orquestrador de código"
+    ],
+    "PDF_EXPORT": [
+        "converta este texto em formato pdf diagramado e pronto para download",
+        "gere um arquivo pdf desse resumo com cabeçalho rodapé e boa formatação",
+        "exportar o texto anterior em pdf com tabelas e títulos preservados",
+        "transforme a resposta anterior em um documento pdf para impressão",
+        "baixe este conteúdo em pdf formatado",
+        "gere um pdf desse resumo que você acabou de escrever",
+        "converta o resumo anterior em pdf"
     ]
 }
 
@@ -342,6 +356,7 @@ CATEGORIAS PERMITIDAS:
 18. MCP_BRAVE_SEARCH: Busca web explicitamente solicitada através do motor independente Brave Search.
 19. MCP_DATABASE: Comandos para consultar bancos de dados (SQLite, DuckDB, PostgreSQL), listar tabelas, descrever schemas de tabelas ou executar queries SQL.
 20. MCP_CODE_RUNNER: Comandos explícitos para executar snippets de código (Python, Bash, scripts) na sandbox e capturar a saída de execução.
+21. PDF_EXPORT: Solicitação para exportar, converter ou gerar PDF formatado a partir de um texto, resumo ou documento Markdown (ex: 'Gere um PDF desse resumo', 'Converta o texto anterior em PDF', 'Exportar em PDF'). NUNCA classifique pedidos de geração/exportação de PDF como DOCUMENT_RAG nem como MCP_FILESYSTEM!
 
 DIRETRIZ DE DETECÇÃO DE MUDANÇA DE TÓPICO (TOPIC SHIFT):
 - Se a mensagem atual não tiver nenhuma relação com a última resposta do assistente (ex: assistente falou de rede social e o usuário perguntou sobre servidor SMB), 'topic_shift' DEVE ser true e 'is_followup' DEVE ser false!
@@ -350,7 +365,7 @@ DIRETRIZ DE DETECÇÃO DE MUDANÇA DE TÓPICO (TOPIC SHIFT):
 REQUISITO OBRIGATÓRIO DE SAÍDA:
 Você DEVE responder ESTRITAMENTE em formato JSON válido com as seguintes chaves:
 {
-  "category": "UMA_DAS_20_CATEGORIAS_ACIMA",
+  "category": "UMA_DAS_21_CATEGORIAS_ACIMA",
   "is_followup": true ou false,
   "topic_shift": true ou false,
   "rewritten_prompt": "pergunta completa expandida ou a própria mensagem se for auto-suficiente",
@@ -421,8 +436,13 @@ MENSAGEM DO USUÁRIO:
                 "CODING", "LOCAL_THINKING", "HEAVY_REASONING", "FACTUAL_GENERAL",
                 "VISION", "IMAGE_GENERATION", "IMAGE_EDIT", "SOCIAL_MEDIA_POST",
                 "DATA_EXPORT_CHART", "SHORT_VIDEO", "MCP_FILESYSTEM", "MCP_FETCH",
-                "MCP_GIT", "MCP_BRAVE_SEARCH", "MCP_DATABASE", "MCP_CODE_RUNNER"
+                "MCP_GIT", "MCP_BRAVE_SEARCH", "MCP_DATABASE", "MCP_CODE_RUNNER",
+                "PDF_EXPORT"
             }
+
+            from pdf_export_service import is_pdf_export_request
+            if is_pdf_export_request(user_prompt):
+                cat = "PDF_EXPORT"
 
             if cat in valid_categories:
                 # Se o classificador apontou topic_shift, desativa herança de contexto
@@ -501,6 +521,13 @@ async def classify_intent_v2(
             last_category = None
             is_followup = False
             print(f"[Roteador Semântico V2 Topic Shift] Desconectando histórico social anterior: nova pergunta é sobre outro domínio.")
+
+    # 3.5 Fast-Pass por Regras Rígidas e Exportação de PDF (0ms)
+    from classifier import quick_rule_classifier
+    fast_rule = quick_rule_classifier(user_prompt)
+    if fast_rule:
+        print(f"[Roteador Semântico V2 Fast-Pass] Regra imediata detectada -> Rota: {fast_rule}")
+        return fast_rule, "v2_fast_pass_rule", None, None
 
     # 4. Roteamento Semântico Vetorial Instantâneo (Qdrant)
     vector_match = await match_semantic_vector(user_prompt)

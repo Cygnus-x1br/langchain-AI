@@ -59,6 +59,7 @@ services:
       - ./domain_skills_service.py:/app/domain_skills_service.py
       - ./skills_api.py:/app/skills_api.py
       - ./phrase_extractor_guardrail.py:/app/phrase_extractor_guardrail.py
+      - ./pdf_export_service.py:/app/pdf_export_service.py
       - ./dashboard.html:/app/dashboard.html
       - ./docs/langchain_orchestrator_architecture_v2.md:/app/docs_view/langchain_orchestrator_architecture_v2.md:ro
       - ./docs/semantic_filter_and_guardrails_guide.md:/app/docs_view/semantic_filter_and_guardrails_guide.md:ro
