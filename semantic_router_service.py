@@ -513,6 +513,13 @@ async def classify_intent_v2(
     last_model = session_state.get("last_model")
     is_followup = is_context_dependent_prompt(user_prompt, messages)
 
+    # 3.1 Verificação de Resposta ao Ask-Mode Social (antes da quebra de tópico)
+    from ask_mode_service import is_ask_mode_reply
+    is_reply, sel_mode, combined_prompt, orig_topic = is_ask_mode_reply(user_prompt, messages, session_state)
+    if is_reply:
+        print(f"[Roteador Semântico V2 Ask-Mode Reply] Usuário escolheu a opção '{sel_mode}' para o tema '{orig_topic}'. Roteando diretamente para SOCIAL_MEDIA_POST.")
+        return "SOCIAL_MEDIA_POST", "v2_social_ask_mode_reply_rule", None, None
+
     # Detecção de Topic Shift: se o chat anterior era SOCIAL_MEDIA_POST e a pergunta atual não tem nada social
     if last_category == "SOCIAL_MEDIA_POST":
         social_terms = r"\b(post\w*|postg\w*|publica[cç]\w*|an[uú]nc\w*|campanha\w*|legenda\w*|carrossel\w*|copy\w*|story|stories|feed|instagram|insta|linkedin|facebook|twitter|tiktok|hashtag)\b"

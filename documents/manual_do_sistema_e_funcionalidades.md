@@ -193,8 +193,9 @@ Em **Cursor Settings $\rightarrow$ Models**:
 
 | Objetivo | Como Solicitar no Chat (Exemplo) | O Que Acontece nos Bastidores |
 | :--- | :--- | :--- |
+| **Criar Post Social (Ask-Mode)** | *"Crie um post sobre IA no agronegócio"* (pedido genérico sem estilo) | O orquestrador detecta o pedido aberto, ativa o **Ask-Mode** e apresenta 4 opções contextualizadas (1-Apenas Copy, 2-Arte IA, 3-Design Gráfico, 4-Carrossel). Ao responder `1`, `2`, `3` ou `4`, o fluxo executa a peça no formato escolhido. |
+| **Criar Post Social Direto** | *"Crie um post carrossel sobre energia solar"* ou *"Crie um post apenas com copy..."* | Se o formato já estiver explícito ou se houver foto anexa, o Ask-Mode é pulado automaticamente e a publicação é gerada sem interrupções. |
 | **Exportar para PDF** | *"Gere um PDF desse resumo"* ou *"Faça um resumo de X e anexe em PDF"* | O orquestrador recupera o Markdown anterior, compila via WeasyPrint em layout executivo A4 e devolve o link de download imediato. |
-| **Criar Post Social** | *"Crie um post para o Instagram sobre inteligência artificial nos negócios"* | Aciona o Social Media Studio v3: gera copy estratégica, hashtags, carrossel e arte conceitual. |
 | **Ajustar Imagem de Post** | *"Troque a frase da imagem anterior para: 'Inovação Contínua'"* | Identifica que é uma revisão, aciona o modelo multimodal de referência (GPT-2.5-sunburst) e altera apenas a frase solicitada. |
 | **Gerar Planilha/Gráfico** | *"Gere uma planilha Excel com as vendas do trimestre e monte um gráfico"* | Rota `DATA_EXPORT_CHART`: gera o código analítico, compila o arquivo `.xlsx` e gera o gráfico Seaborn para download. |
 | **Consultar Notícias Atuais** | *"Quais as notícias de hoje sobre o setor elétrico?"* | Rota `REALTIME_SEARCH`: faz busca externa na web, filtra fontes e sintetiza as informações mais recentes de 2026. |

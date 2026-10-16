@@ -126,17 +126,20 @@ def get_conversation_state(conversation_id: str, messages: list = None) -> dict:
 
     return state
 
-def update_conversation_state(conversation_id: str, category: str, target_model: str, prompt: str, assistant_snippet: str = ""):
+def update_conversation_state(conversation_id: str, category: str, target_model: str, prompt: str, assistant_snippet: str = "", **kwargs):
     """Atualiza o estado da sessão com a última categoria, modelo e prompt utilizados."""
     if not conversation_id:
         return
-    CONVERSATION_SESSIONS[conversation_id] = {
+    state = {
         "last_category": category,
         "last_model": target_model,
         "last_prompt": prompt,
         "last_assistant_snippet": assistant_snippet[:300] if assistant_snippet else "",
         "updated_at": time.time()
     }
+    if kwargs:
+        state.update(kwargs)
+    CONVERSATION_SESSIONS[conversation_id] = state
 
 def message_has_image(msg: dict) -> bool:
     content = msg.get("content")

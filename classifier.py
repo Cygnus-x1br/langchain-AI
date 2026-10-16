@@ -382,6 +382,13 @@ async def classify_intent_v1(
     last_model = session_state.get("last_model")
     is_followup = is_context_dependent_prompt(user_prompt, messages)
 
+    # Se for resposta ao menu Ask-Mode social, preserva SOCIAL_MEDIA_POST diretamente
+    from ask_mode_service import is_ask_mode_reply
+    is_reply, sel_mode, combined_prompt, orig_topic = is_ask_mode_reply(user_prompt, messages, session_state)
+    if is_reply:
+        print(f"[Orquestrador Ask-Mode Reply] Usuário respondeu ao menu Ask-Mode: opção '{sel_mode}' para tema '{orig_topic}'. Rota: SOCIAL_MEDIA_POST")
+        return "SOCIAL_MEDIA_POST", "social_ask_mode_reply_rule", None, None
+
     # Se a categoria anterior era SOCIAL_MEDIA_POST, mas a mensagem atual NÃO cita nenhuma rede social,
     # postagem, imagem ou legenda, NUNCA herdar SOCIAL_MEDIA_POST!
     if last_category == "SOCIAL_MEDIA_POST":

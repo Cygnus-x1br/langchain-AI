@@ -1894,43 +1894,127 @@ async def chat_completions(request: Request):
         all_imgs = extract_all_images(messages, last_user_msg)
         num_images = len(all_imgs)
         
-        prompt_lower = user_prompt.lower()
-        # Gatilhos explícitos que exigem síntese multimodal avançada (OpenAI GPT Image / SMART)
-        smart_keywords = [
-            "smart", "modo smart", "fundo", "criar fundo", "mudar fundo", "trocar fundo",
-            "fonte especial", "fontes especiais", "tipografia", "design avançado",
-            "componha", "composição", "junte as fotos", "junte as imagens", "combinar fotos",
-            "cartaz", "poster", "banner complexo", "efeito visual", "estilização", "estilizada"
-        ]
-        has_smart_instruction = any(k in prompt_lower for k in smart_keywords)
+        # 0. Verificação do Modo Interativo Ask-Mode (Social)
+        from ask_mode_service import (
+            is_ask_mode_reply,
+            is_ask_mode_eligible,
+            generate_social_ask_mode_message,
+            extract_social_topic
+        )
 
-        # Gatilhos de reedição / refinamento contextual após geração inicial
-        # Ex: "refaça esse post com o texto mais bonito", "melhore a imagem", "edite a imagem", etc.
-        refinement_keywords = [
-            "refaça", "refazer", "recrie", "recriar", "edite", "editar",
-            "melhore", "melhorar", "mude", "mudar", "altere", "alterar",
-            "troque", "trocar", "ajuste", "ajustar", "reedite", "reeditar",
-            "mais bonito", "mais bonita", "outro texto", "mude o texto"
-        ]
-        is_refinement = any(k in prompt_lower for k in refinement_keywords)
-        prev_was_social = session_state.get("last_category") == "SOCIAL_MEDIA_POST" or is_followup
-        is_post_reedition = prev_was_social and (is_refinement or num_images >= 1)
-        
-        req_model_lower = str(req_model).lower() if req_model else ""
-        # Regra de negócio:
-        # - Se modelo requisitado tiver "smart": SMART
-        # - Se houver mais de 1 foto (ex: 2 ou mais fotos para compor): SMART
-        # - Se o usuário pedir regras de design avançadas (fundo, fontes, composição): SMART
-        # - Se for reedição/refinamento de um post anterior: SMART automaticamente (preserva contexto e usa IA visual)
-        is_explicit_simple = any(k in prompt_lower for k in ["simples", "fast", "modo simples", "post simples", "postagem simples", "postgem simples", "direto", "básico", "basico"])
-        if is_explicit_simple:
-            selected_mode = "FAST"
-        elif "smart" in req_model_lower or num_images > 1 or has_smart_instruction or (prev_was_social and is_refinement):
-            selected_mode = "SMART"
+        is_reply, ask_selected_mode, combined_prompt, orig_topic = is_ask_mode_reply(
+            user_prompt=user_prompt,
+            messages=messages,
+            session_state=session_state
+        )
+
+        if is_reply:
+            print(f"[Orquestrador Ask-Mode Reply] Executando modo escolhido: '{ask_selected_mode}' para tema '{orig_topic}'.")
+            user_prompt = combined_prompt
+            selected_mode = ask_selected_mode
+            session_state["pending_ask_mode"] = False
+        elif is_ask_mode_eligible(user_prompt, messages, num_images):
+            print(f"[Orquestrador Ask-Mode] Pedido de postagem genérico detectado ('{user_prompt}'). Gerando menu interativo (Opção A)...")
+            ask_message = await generate_social_ask_mode_message(user_prompt)
+            user_topic = extract_social_topic(user_prompt)
+
+            log_entry["target_destination"] = "social_ask_mode_menu"
+            log_entry["target_model"] = "Combo_Free_Chat"
+            log_entry["response_preview"] = ask_message[:250]
+            log_entry["duration_seconds"] = round(time.time() - req_start_time, 3)
+            log_entry["status"] = "success"
+            write_log(log_entry)
+
+            update_conversation_state(
+                conversation_id=conversation_id,
+                category="SOCIAL_MEDIA_POST",
+                target_model="Combo_Free_Chat",
+                prompt=user_prompt,
+                assistant_snippet=ask_message[:300],
+                pending_ask_mode=True,
+                pending_social_prompt=user_prompt,
+                pending_topic=user_topic
+            )
+
+            debug_reasoning = format_debug_block(log_entry) if is_debug_allowed_for_user(user_email=user_email, user_id=user_id) else None
+
+            if stream:
+                async def ask_stream():
+                    if debug_reasoning:
+                        chunk_dbg = {
+                            "id": f"chatcmpl-ask-{int(time.time())}",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": "Combo_Free_Chat",
+                            "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": debug_reasoning}, "finish_reason": None}]
+                        }
+                        yield f"data: {json.dumps(chunk_dbg)}\n\n".encode("utf-8")
+                    chunk_resp = {
+                        "id": f"chatcmpl-ask-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "Combo_Free_Chat",
+                        "choices": [{"index": 0, "delta": {"content": ask_message}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk_resp)}\n\n".encode("utf-8")
+                    done_resp = {
+                        "id": f"chatcmpl-ask-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "Combo_Free_Chat",
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                    }
+                    yield f"data: {json.dumps(done_resp)}\n\n".encode("utf-8")
+                    yield b"data: [DONE]\n\n"
+
+                return StreamingResponse(ask_stream(), media_type="text/event-stream")
+            else:
+                msg_payload = {"role": "assistant", "content": ask_message}
+                if debug_reasoning:
+                    msg_payload["reasoning_content"] = debug_reasoning
+                return JSONResponse(content={
+                    "id": f"chatcmpl-ask-{int(time.time())}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": "Combo_Free_Chat",
+                    "choices": [{"index": 0, "message": msg_payload, "finish_reason": "stop"}]
+                })
         else:
-            selected_mode = "FAST"
+            prompt_lower = user_prompt.lower()
+            # Gatilhos explícitos que exigem síntese multimodal avançada (OpenAI GPT Image / SMART)
+            smart_keywords = [
+                "smart", "modo smart", "fundo", "criar fundo", "mudar fundo", "trocar fundo",
+                "fonte especial", "fontes especiais", "tipografia", "design avançado",
+                "componha", "composição", "junte as fotos", "junte as imagens", "combinar fotos",
+                "cartaz", "poster", "banner complexo", "efeito visual", "estilização", "estilizada"
+            ]
+            has_smart_instruction = any(k in prompt_lower for k in smart_keywords)
+
+            # Gatilhos de reedição / refinamento contextual após geração inicial
+            refinement_keywords = [
+                "refaça", "refazer", "recrie", "recriar", "edite", "editar",
+                "melhore", "melhorar", "mude", "mudar", "altere", "alterar",
+                "troque", "trocar", "ajuste", "ajustar", "reedite", "reeditar",
+                "mais bonito", "mais bonita", "outro texto", "mude o texto"
+            ]
+            is_refinement = any(k in prompt_lower for k in refinement_keywords)
+            prev_was_social = session_state.get("last_category") == "SOCIAL_MEDIA_POST" or is_followup
+            is_post_reedition = prev_was_social and (is_refinement or num_images >= 1)
             
-        print(f"[Orquestrador] Modo Social Selecionado: {selected_mode} (Imagens detectadas: {num_images}, Gatilho Avançado: {has_smart_instruction}, Reedição Contextual: {is_post_reedition})")
+            req_model_lower = str(req_model).lower() if req_model else ""
+            is_explicit_simple = any(k in prompt_lower for k in ["simples", "fast", "modo simples", "post simples", "postagem simples", "postgem simples", "direto", "básico", "basico"])
+            if is_explicit_simple:
+                selected_mode = "FAST"
+            elif "smart" in req_model_lower or num_images > 1 or has_smart_instruction or (prev_was_social and is_refinement):
+                selected_mode = "SMART"
+            elif any(k in prompt_lower for k in ["design", "cartaz", "tipografia"]):
+                selected_mode = "DESIGN"
+            elif any(k in prompt_lower for k in ["apenas copy", "apenas texto", "sem imagem"]):
+                selected_mode = "COPY_ONLY"
+            else:
+                selected_mode = "FAST"
+                
+            print(f"[Orquestrador] Modo Social Selecionado: {selected_mode} (Imagens detectadas: {num_images}, Gatilho Avançado: {has_smart_instruction}, Reedição Contextual: {is_post_reedition})")
                 
         # 3. Prosseguir com a geração no modo escolhido
         log_entry["target_destination"] = "social_flow_executor"

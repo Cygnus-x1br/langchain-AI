@@ -768,7 +768,9 @@ async def execute_social_post_flow(
     source_img_public_url = source_img_public_urls[0] if source_img_public_urls else None
 
     # 1.5. Guardrail de Intenção Genérica (Orientação Fast vs Smart)
-    if len(user_prompt.split()) < 30 and not source_img_public_url:
+    # Se o usuário já passou pelo Ask-Mode ou escolheu modo específico, pula este guardrail
+    has_ask_mode_choice = "[MODO SELECIONADO" in user_prompt or mode in ["COPY_ONLY", "CAROUSEL", "DESIGN"]
+    if not has_ask_mode_choice and len(user_prompt.split()) < 30 and not source_img_public_url:
         from langchain_openai import ChatOpenAI
         from config import LITELLM_BASE_URL, LITELLM_API_KEY
         
@@ -871,7 +873,14 @@ Responda SOMENTE em JSON válido:
     public_img_url, img_model, img_provider, img_duration = None, None, None, 0.0
     img_prompt_en = post.get("image_prompt_en") or briefing.get("image_prompt_en") or f"Editorial photography about {user_prompt[:50]}"
 
-    if source_img_public_url:
+    if mode == "COPY_ONLY":
+        tools_called.append({
+            "action": "social_copy_only",
+            "status": "success",
+            "message": "Geração de imagem dispensada a pedido do usuário (Apenas Copy e Estratégia)."
+        })
+        print("[Social Flow] Modo COPY_ONLY ativado: geração de imagem dispensada.")
+    elif source_img_public_url:
         public_img_url = source_img_public_url
         img_model = "Existing_Image"
         img_provider = "Imagem do usuário"
@@ -971,6 +980,8 @@ Responda SOMENTE em JSON válido:
 
     if public_img_url:
         out.append(f"![Arte para {spec['label']}]({public_img_url})\n")
+    elif mode == "COPY_ONLY":
+        out.append("> 📄 **Modo Apenas Copy & Estratégia:** Imagens dispensadas conforme sua preferência. Use a copy pronta e as diretrizes abaixo com suas próprias fotos!\n")
     else:
         out.append("> ℹ️ *Não foi possível obter a imagem automaticamente. Use o prompt visual abaixo para gerá-la externamente.*\n")
 

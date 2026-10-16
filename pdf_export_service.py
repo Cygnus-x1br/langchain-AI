@@ -5,8 +5,15 @@ import uuid
 import datetime
 from typing import Tuple, Dict, Any, Optional
 
-import markdown
-from weasyprint import HTML
+try:
+    import markdown
+except ImportError:
+    markdown = None
+
+try:
+    from weasyprint import HTML
+except ImportError:
+    HTML = None
 
 from config import (
     IMAGE_STORAGE_DIR,
